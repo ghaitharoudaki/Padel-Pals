@@ -1,0 +1,6 @@
+{
+  "name": "Padel Pals - 4 Players Doubles & Realistic Physics",
+  "description": "Slow-paced, realistic 3D padel tennis inspired by Just Volleyball with floating-hand avatars, spiky anime hair, 4-player 2v2 doubles, sunny park court, authentic ball physics, glass wall rebounds, and mouse & keyboard controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
