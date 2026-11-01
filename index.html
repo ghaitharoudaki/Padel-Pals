@@ -9,6 +9,32 @@
     <meta property="og:description" content="Slow-paced, realistic 3D padel tennis inspired by Just Volleyball with floating-hand avatars, spiky anime hair, 4-player 2v2 doubles, sunny park court, authentic ball physics, glass wall rebounds, and mouse & keyboard controls." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700;800;900&family=Lilita+One&display=swap" rel="stylesheet" />
+    <style>
+      body {
+        font-family: 'Fredoka', cursive, system-ui, sans-serif;
+      }
+      .font-brand {
+        font-family: 'Lilita One', cursive, sans-serif;
+      }
+      @keyframes gentleBounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-8px); }
+      }
+      .animate-logo-bounce {
+        animation: gentleBounce 2.4s ease-in-out infinite;
+      }
+      @keyframes popWobble {
+        0% { transform: scale(1) rotate(-1deg); }
+        50% { transform: scale(1.03) rotate(1deg); }
+        100% { transform: scale(1.02) rotate(-0.5deg); }
+      }
+      .btn-chunky:hover {
+        animation: popWobble 0.22s ease-in-out forwards;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

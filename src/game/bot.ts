@@ -1,5 +1,6 @@
-import { BallState, Difficulty, PlayerState, ShotType, SwingSide, Vector3D } from './types';
-import { evaluateContactQuality, predictBallLanding } from './physics';
+import { BallState, Difficulty, HitQuality, PlayerState, ShotType, SwingSide, Vector3D } from './types';
+import { evaluateContactTiming, predictBallLanding } from './physics';
+import { isBajadaWindow } from './ball';
 
 export interface BotDecision {
   targetPosition: Vector3D;
@@ -9,6 +10,7 @@ export interface BotDecision {
   swingSide: SwingSide;
   power: number;
   targetAim: Vector3D;
+  timingQuality: HitQuality;
   stateDescription: string;
 }
 
@@ -18,7 +20,6 @@ function deterministicUnit(bot: PlayerState, ball: BallState, salt: number): num
   return Math.abs(Math.sin(seed * 12.9898) * 43758.5453) % 1;
 }
 
-// Normalized difficulty configuration
 export interface DifficultyConfig {
   speed: number;
   reactionTime: number; // seconds
@@ -26,8 +27,11 @@ export interface DifficultyConfig {
   positionError: number;// meters
   powerMin: number;
   powerMax: number;
-  smashThreshold: number; // willingness to smash
+  smashThreshold: number; // willingness to smash overhead
+  dropThreshold: number;
+  lobThreshold: number;
   wallPrediction: boolean;
+  perfectTimingRate: number; // chance of sweetspot
 }
 
 export function getDifficultyConfig(diff: Difficulty): DifficultyConfig {
@@ -35,45 +39,54 @@ export function getDifficultyConfig(diff: Difficulty): DifficultyConfig {
     case 'easy':
     case 'amateur':
       return {
-        speed: 4.5,
-        reactionTime: 0.32,
-        aimError: 0.9,
-        positionError: 0.55,
+        speed: 4.2,
+        reactionTime: 0.30,
+        aimError: 0.85,
+        positionError: 0.50,
         powerMin: 0.50,
-        powerMax: 0.68,
-        smashThreshold: 0.3,
+        powerMax: 0.65,
+        smashThreshold: 0.25,
+        dropThreshold: 0.15,
+        lobThreshold: 0.30,
         wallPrediction: false,
+        perfectTimingRate: 0.25,
       };
     case 'hard':
     case 'legend':
       return {
-        speed: 8.0,
-        reactionTime: 0.03,
-        aimError: 0.05,
-        positionError: 0.02,
-        powerMin: 0.75,
+        speed: 6.0, // same as player sprint ~6 m/s
+        reactionTime: 0.04,
+        aimError: 0.08,
+        positionError: 0.04,
+        powerMin: 0.72,
         powerMax: 0.95,
-        smashThreshold: 0.95,
+        smashThreshold: 0.90,
+        dropThreshold: 0.40,
+        lobThreshold: 0.50,
         wallPrediction: true,
+        perfectTimingRate: 0.80,
       };
     case 'medium':
     case 'pro':
     default:
       return {
-        speed: 6.0,
-        reactionTime: 0.12,
-        aimError: 0.35,
-        positionError: 0.20,
-        powerMin: 0.62,
-        powerMax: 0.82,
-        smashThreshold: 0.70,
+        speed: 5.2,
+        reactionTime: 0.14,
+        aimError: 0.30,
+        positionError: 0.18,
+        powerMin: 0.60,
+        powerMax: 0.80,
+        smashThreshold: 0.65,
+        dropThreshold: 0.25,
+        lobThreshold: 0.40,
         wallPrediction: true,
+        perfectTimingRate: 0.55,
       };
   }
 }
 
 /**
- * Tactical Bot AI for 4-Player Doubles Padel
+ * Tactical Bot AI using the EXACT same hit logic, timing evaluation, and rules
  */
 export function updateBotAI(
   bot: PlayerState,
@@ -87,22 +100,17 @@ export function updateBotAI(
   const config = typeof difficulty === 'string' ? getDifficultyConfig(difficulty) : difficulty;
   const isSouth = bot.side === 'south';
 
-  // Doubles partners share the full width; zones are preferred home lanes,
-  // not hard walls, so either player can cover a cross-court return.
+  // Court lateral boundary for doubles
   const minX = -4.4;
   const maxX = 4.4;
   let homeX = 0;
 
   if (isDoubles) {
-    if (bot.zone === 'left') {
-      homeX = -2.2;
-    } else {
-      homeX = 2.2;
-    }
+    homeX = bot.zone === 'left' ? -2.2 : 2.2;
   }
 
   // Tactical baseline home depth
-  const homeZ = isSouth ? 6.8 : -6.8;
+  const homeZ = isSouth ? 7.0 : -7.0;
   const readyHome: Vector3D = { x: homeX, y: 0, z: homeZ };
 
   let targetPos: Vector3D = { ...readyHome };
@@ -112,6 +120,7 @@ export function updateBotAI(
   let power = 0.65;
   let stateDesc = 'Ready';
   let movementScale = 1;
+  let timingQuality: HitQuality = 'GOOD';
 
   let targetAim: Vector3D = {
     x: (deterministicUnit(bot, ball, 1) - 0.5) * 3.5,
@@ -119,18 +128,18 @@ export function updateBotAI(
     z: isSouth ? -7.0 : 7.0,
   };
 
-  // 1. SERVING STATE
+  // 1. LEGAL UNDERHAND SERVE
   if (bot.isServing && !ball.inPlay) {
     wantsToSwing = true;
     shotType = 'flat';
     swingSide = 'serve';
     power = 0.64;
-    // Serve diagonally into the cross service box
+    // Serve diagonally into the cross service box (X: ±2.2, Z: ±4.8)
     const serveTargetX = bot.zone === 'left' ? 2.2 : -2.2;
     targetAim = {
       x: serveTargetX + (deterministicUnit(bot, ball, 2) - 0.5) * config.aimError,
       y: 0,
-      z: isSouth ? -5.5 : 5.5,
+      z: isSouth ? -4.8 : 4.8,
     };
     return {
       targetPosition: bot.position,
@@ -140,38 +149,38 @@ export function updateBotAI(
       swingSide,
       power,
       targetAim,
-      stateDescription: 'Serving',
+      timingQuality: 'GOOD',
+      stateDescription: 'Serving Underhand',
     };
   }
 
-  // 2. CHECK BALL APPROACH DIRECTION
+  // 2. BALL APPROACH DETECTION
   const ballComingToBotSide =
     ball.lastHitter !== bot.side &&
-    (isSouth ? ball.velocity.z > 0.3 : ball.velocity.z < -0.3);
+    (isSouth ? ball.velocity.z > 0.2 : ball.velocity.z < -0.2);
 
-  // 3. DOUBLES COURT COVERAGE & PARTNER RESPONSIBILITY
+  // 3. DOUBLES COURT COVERAGE & PARTNER SPACING
   let isMyBall = true;
   if (isDoubles && teammate) {
     const mateDist = Math.hypot(ball.position.x - teammate.position.x, ball.position.z - teammate.position.z);
     const myDist = Math.hypot(ball.position.x - bot.position.x, ball.position.z - bot.position.z);
 
-    const teammateIsActivelyTaking =
+    const teammateTaking =
       teammate.role !== 'human' || teammate.isSwinging || Math.hypot(teammate.velocity.x, teammate.velocity.z) > 0.2;
-    if (teammateIsActivelyTaking && mateDist < myDist - 1.1 && mateDist < 3.2) {
-      // Partner is significantly closer to intercept, avoid double-committing
+    if (teammateTaking && mateDist < myDist - 1.2 && mateDist < 3.2) {
       isMyBall = false;
     }
   }
 
-  // 4. INTERCEPTION & POSITIONING LOGIC
+  // 4. INTERCEPTION & WALL PLAY LOGIC
   if (ball.inPlay && ballComingToBotSide) {
     if (isMyBall) {
       stateDesc = 'Intercepting';
 
-      // Ball trajectory prediction
       const landing = predictBallLanding(ball);
       const reactionScale = Math.max(0.35, Math.min(1, landing.timeToBounce / Math.max(config.reactionTime, 0.01)));
       movementScale = reactionScale;
+
       const isDeepBall = isSouth
         ? (ball.position.z > 6.0 || (landing.z > 8.5 && ball.velocity.z > 5.0))
         : (ball.position.z < -6.0 || (landing.z < -8.5 && ball.velocity.z < -5.0));
@@ -179,26 +188,22 @@ export function updateBotAI(
       const isLob = ball.velocity.y > 2.0 || ball.position.y > 2.4;
 
       let interceptZ = isSouth
-        ? Math.max(2.4, Math.min(8.6, landing.z))
-        : Math.min(-2.4, Math.max(-8.6, landing.z));
+        ? Math.max(2.0, Math.min(8.6, landing.z))
+        : Math.min(-2.0, Math.max(-8.6, landing.z));
 
-      // Padel Wall Rebound Play:
-      // If the ball is going deep into the back glass, backpedal and wait for the rebound!
-      if (config.wallPrediction && isDeepBall && isLob) {
-        stateDesc = 'Anticipating Rebound';
-        // Stand 1.8m in front of back glass to strike ball as it rebounds out
+      // Wall Rebound Anticipation (Padel glass play):
+      // If the ball is going deep into the back glass, position 1.8m in front to strike the rebound!
+      if (config.wallPrediction && isDeepBall && (isLob || landing.willReboundGlass)) {
+        stateDesc = 'Anticipating Wall Rebound';
         interceptZ = isSouth ? 7.6 : -7.6;
       }
 
-      // Intercept X based on predicted landing with slight lateral offset for clean racket strike
       let expectedX = landing.x;
       const errorSeed = ((bot.slot * 17 + ball.bounceCount * 31) % 101) / 100 - 0.5;
       expectedX += errorSeed * config.positionError;
       expectedX = Math.max(minX, Math.min(maxX, expectedX));
 
-      // Offset standing position slightly based on forehand vs backhand side
-      // In Three.js: South player looks towards -Z; racket in right hand (+X in local space).
-      // North player looks towards +Z; racket in right hand (-X in world space).
+      // Side offset for proper racket hand alignment
       const forehandOffset = isSouth ? -0.45 : 0.45;
       const strikeX = Math.max(minX, Math.min(maxX, expectedX + forehandOffset));
 
@@ -208,43 +213,52 @@ export function updateBotAI(
         z: interceptZ,
       };
 
-      // 5. CONTACT WINDOW EVALUATION
+      // 5. EVALUATE TIMING QUALITY (Same logic as player)
+      const timing = evaluateContactTiming(bot.position, ball.position, bot.side);
+      timingQuality = deterministicUnit(bot, ball, 9) < config.perfectTimingRate ? 'PERFECT' : timing.quality;
+
       const dx = ball.position.x - bot.position.x;
-
-      const onBotSide = isSouth ? ball.position.z > 0.2 : ball.position.z < -0.2;
-      const validGroundstroke = ball.bounceCount >= 1;
-      const validVolley = ball.bounceCount === 0 && onBotSide && ball.position.y > 0.85 && Math.abs(ball.position.z) < 6.2;
-
-      // Determine Forehand vs Backhand based on ball position relative to player
       if (isSouth) {
         swingSide = dx >= 0 ? 'forehand' : 'backhand';
       } else {
         swingSide = dx <= 0 ? 'forehand' : 'backhand';
       }
 
-      // Overhead check
       if (ball.position.y > 1.65) {
         swingSide = 'overhead';
       }
 
-      // Contact Range Check: tight 1.8m skill zone
-      const contact = evaluateContactQuality(bot.position, ball.position, ball.velocity.z);
-      if (contact.quality !== 'OUT_OF_REACH' && (validGroundstroke || validVolley) && ball.position.y <= 2.85) {
+      const onBotSide = isSouth ? ball.position.z > 0.2 : ball.position.z < -0.2;
+      const validGroundstroke = ball.bounceCount >= 1;
+      const validVolley = ball.bounceCount === 0 && onBotSide && ball.position.y > 0.85 && Math.abs(ball.position.z) < 6.5;
+
+      // Check for Bajada (aggressive downward wall rebound drive)
+      const canBajada = isBajadaWindow(ball, bot.position, bot.side);
+
+      if (timing.quality !== 'OUT_OF_REACH' && (validGroundstroke || validVolley || canBajada) && ball.position.y <= 2.9) {
         wantsToSwing = true;
         stateDesc = 'Swinging';
 
         // TACTICAL SHOT SELECTION
-        if (ball.position.y > 1.6 && Math.abs(bot.position.z) < 5.2 && deterministicUnit(bot, ball, 3) < config.smashThreshold) {
-          // Overhead smash opportunity!
+        if (canBajada) {
+          // Bajada attack off back glass rebound!
+          shotType = 'bajada';
+          power = config.powerMax;
+          targetAim = {
+            x: opponent.position.x > 0 ? -3.0 : 3.0,
+            y: 0,
+            z: isSouth ? -8.2 : 8.2,
+          };
+        } else if (ball.position.y > 1.65 && deterministicUnit(bot, ball, 3) < config.smashThreshold) {
+          // Overhead smash!
           shotType = 'smash';
           power = config.powerMax;
-          // Spike into opponent court cross corner
           targetAim = {
             x: opponent.position.x > 0 ? -3.2 : 3.2,
             y: 0,
             z: isSouth ? -8.4 : 8.4,
           };
-        } else if (Math.abs(opponent.position.z) < 4.0 && deterministicUnit(bot, ball, 4) < 0.65) {
+        } else if (Math.abs(opponent.position.z) < 4.0 && deterministicUnit(bot, ball, 4) < config.lobThreshold) {
           // Opponent rushed net -> Lob over them!
           shotType = 'lob';
           power = 0.74;
@@ -253,35 +267,32 @@ export function updateBotAI(
             y: 0,
             z: isSouth ? -8.8 : 8.8,
           };
-        } else if (config.wallPrediction && deterministicUnit(bot, ball, 6) < 0.45) {
-          // Bandeja slice: low ball off opponent back glass
-          shotType = 'slice';
-          power = (config.powerMin + config.powerMax) * 0.5;
+        } else if (Math.abs(opponent.position.z) > 7.0 && deterministicUnit(bot, ball, 6) < config.dropThreshold) {
+          // Opponent stuck deep on baseline -> Drop shot!
+          shotType = 'drop';
+          power = 0.52;
           targetAim = {
-            x: opponent.position.x > 0 ? -3.4 : 3.4,
+            x: (deterministicUnit(bot, ball, 7) - 0.5) * 3.2,
             y: 0,
-            z: isSouth ? -6.8 : 6.8,
+            z: isSouth ? -2.2 : 2.2,
           };
         } else {
-          // Fast topspin drive or flat shot
-          shotType = deterministicUnit(bot, ball, 7) < 0.6 ? 'topspin' : 'flat';
+          // Flat or topspin drive
+          shotType = deterministicUnit(bot, ball, 8) < 0.6 ? 'topspin' : 'flat';
           power = (config.powerMin + config.powerMax) * 0.52;
           const targetX = opponent.position.x > 0 ? -2.8 : 2.8;
           targetAim = {
-            x: targetX + (deterministicUnit(bot, ball, 8) - 0.5) * config.aimError,
+            x: targetX + (deterministicUnit(bot, ball, 10) - 0.5) * config.aimError,
             y: 0,
-            z: isSouth ? -6.8 : 6.8,
+            z: isSouth ? -7.2 : 7.2,
           };
         }
       }
     } else {
-      // Supporting positioning: partner is taking the shot
+      // Supporting partner
       stateDesc = 'Supporting Partner';
-      // If teammate is forward, cover the back; if teammate is back, move slightly forward
       const mateZ = teammate ? teammate.position.z : homeZ;
-      const supportZ = isSouth
-        ? (mateZ < 4.5 ? 7.2 : 5.8)
-        : (mateZ > -4.5 ? -7.2 : -5.8);
+      const supportZ = isSouth ? (mateZ < 4.5 ? 7.2 : 5.8) : (mateZ > -4.5 ? -7.2 : -5.8);
 
       targetPos = {
         x: homeX,
@@ -290,16 +301,16 @@ export function updateBotAI(
       };
     }
   } else {
-    // Ball is on opponent's half -> maintain active ready stance
+    // Ball on opponent's half
     stateDesc = 'Ready Stance';
     targetPos = {
       x: homeX,
       y: 0,
-      z: isSouth ? 6.4 : -6.4,
+      z: isSouth ? 6.5 : -6.5,
     };
   }
 
-  // 6. SMOOTH MOVEMENT & KINEMATICS VELOCITY CALCULATION
+  // Movement velocity towards target position
   const diffX = targetPos.x - bot.position.x;
   const diffZ = targetPos.z - bot.position.z;
   const distToTarget = Math.hypot(diffX, diffZ);
@@ -320,6 +331,7 @@ export function updateBotAI(
     swingSide,
     power,
     targetAim,
+    timingQuality,
     stateDescription: stateDesc,
   };
 }

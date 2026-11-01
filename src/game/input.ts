@@ -1,14 +1,21 @@
 import * as THREE from 'three';
-import { ShotType, Vector3D } from './types';
+import { HitQuality, ShotType, Vector3D } from './types';
+
+export interface SwingIntent {
+  shot: ShotType;
+  power: number;
+  bias: { x: number; z: number };
+  isJumpHit: boolean;
+}
 
 export interface InputManagerConfig {
   mountElement: HTMLElement;
   camera: THREE.Camera;
-  onSwing: (shot: ShotType, power: number, bias?: { x: number; z: number }) => void;
+  onSwing: (intent: SwingIntent) => void;
   onChargeChange: (power: number) => void;
-  onShotPreviewChange: (shot: ShotType) => void;
   onAimChange: (aim: Vector3D) => void;
   onToggleDebug: () => void;
+  onJumpRequest?: () => void;
 }
 
 export class InputManager {
@@ -32,6 +39,25 @@ export class InputManager {
     return this.keys;
   }
 
+  public getMovementInput(): { x: number; z: number; sprint: boolean } {
+    let x = 0;
+    let z = 0;
+    if (this.keys['d'] || this.keys['arrowright']) x += 1;
+    if (this.keys['a'] || this.keys['arrowleft']) x -= 1;
+    if (this.keys['s'] || this.keys['arrowdown']) z += 1;
+    if (this.keys['w'] || this.keys['arrowup']) z -= 1;
+
+    // Normalize diagonal movement
+    const len = Math.hypot(x, z);
+    if (len > 0) {
+      x /= len;
+      z /= len;
+    }
+
+    const sprint = !!this.keys['shift'];
+    return { x, z, sprint };
+  }
+
   public getMouseAim(): Vector3D {
     return this.mouseAim;
   }
@@ -44,10 +70,10 @@ export class InputManager {
     return this.currentChargePower;
   }
 
-  public update(now: number, ballPos: Vector3D, playerPos: Vector3D, currentShot: ShotType) {
+  public update(now: number) {
     if (this.isCharging) {
       const elapsed = (now - this.chargeStartTime) / 1000;
-      this.currentChargePower = Math.min(1.0, 0.45 + elapsed * 0.95);
+      this.currentChargePower = Math.min(1.0, 0.50 + elapsed * 1.1);
       this.config.onChargeChange(this.currentChargePower);
     }
   }
@@ -68,16 +94,64 @@ export class InputManager {
     }
   };
 
+  /**
+   * Determine shot type based on modifiers:
+   * - Shift held: Lob
+   * - Ctrl held: Drop shot
+   * - Jump / overhead: Smash
+   */
+  public determineShotType(isOverheadOrJumping: boolean, isBajadaEligible: boolean): ShotType {
+    if (this.keys['control'] || this.keys['ctrl']) {
+      return 'drop';
+    }
+    if (this.keys['shift']) {
+      return 'lob';
+    }
+    if (isBajadaEligible) {
+      return 'bajada';
+    }
+    if (isOverheadOrJumping) {
+      return 'smash';
+    }
+    return this.currentChargePower > 0.75 ? 'topspin' : 'flat';
+  }
+
+  private triggerHit(power: number) {
+    const biasX =
+      (this.keys['d'] || this.keys['arrowright'] ? 1 : 0) -
+      (this.keys['a'] || this.keys['arrowleft'] ? 1 : 0);
+    const biasZ =
+      (this.keys['w'] || this.keys['arrowup'] ? 1 : 0) -
+      (this.keys['s'] || this.keys['arrowdown'] ? 1 : 0);
+
+    const intent: SwingIntent = {
+      shot: 'flat', // will be contextualized by App.tsx with ball height
+      power,
+      bias: { x: biasX, z: biasZ },
+      isJumpHit: false,
+    };
+
+    this.config.onSwing(intent);
+  }
+
   private handleMouseDown = (e: MouseEvent) => {
     if (e.button === 0) {
-      // Left click hold to charge
+      // Left click charge swing
       this.isCharging = true;
       this.chargeStartTime = performance.now();
       this.currentChargePower = 0.50;
       this.config.onChargeChange(this.currentChargePower);
     } else if (e.button === 2) {
-      // Right click instant power hit / smash
-      this.triggerSwing('smash', 0.95);
+      // Right click instant smash / spike
+      this.config.onSwing({
+        shot: 'smash',
+        power: 0.95,
+        bias: {
+          x: (this.keys['d'] ? 1 : 0) - (this.keys['a'] ? 1 : 0),
+          z: (this.keys['w'] ? 1 : 0) - (this.keys['s'] ? 1 : 0),
+        },
+        isJumpHit: true,
+      });
     }
   };
 
@@ -85,7 +159,7 @@ export class InputManager {
     if (e.button === 0 && this.isCharging) {
       this.isCharging = false;
       const power = Math.max(0.55, this.currentChargePower);
-      this.triggerSwing('flat', power);
+      this.triggerHit(power);
       this.currentChargePower = 0.65;
       this.config.onChargeChange(0.65);
     }
@@ -95,15 +169,16 @@ export class InputManager {
     const key = e.key.toLowerCase();
     this.keys[key] = true;
     if (e.key === 'Shift') this.keys['shift'] = true;
+    if (e.key === 'Control') this.keys['control'] = true;
 
-    // F3 toggles the debug overlay
+    // F3 toggles debug overlay
     if (e.code === 'F3') {
       e.preventDefault();
       this.config.onToggleDebug();
       return;
     }
 
-    // Spacebar hold to charge
+    // Spacebar: ONE hit button (hold to charge, release to strike)
     if (e.code === 'Space' && !e.repeat) {
       e.preventDefault();
       this.isCharging = true;
@@ -111,20 +186,26 @@ export class InputManager {
       this.currentChargePower = 0.50;
       this.config.onChargeChange(this.currentChargePower);
     }
+
+    // J or E key triggers jump for smashes
+    if ((key === 'j' || key === 'e') && !e.repeat) {
+      e.preventDefault();
+      this.config.onJumpRequest?.();
+    }
   };
 
   private handleKeyUp = (e: KeyboardEvent) => {
     const key = e.key.toLowerCase();
     this.keys[key] = false;
     if (e.key === 'Shift') this.keys['shift'] = false;
+    if (e.key === 'Control') this.keys['control'] = false;
 
-    // Spacebar release
     if (e.code === 'Space') {
       e.preventDefault();
       if (this.isCharging) {
         this.isCharging = false;
         const power = Math.max(0.55, this.currentChargePower);
-        this.triggerSwing('flat', power);
+        this.triggerHit(power);
         this.currentChargePower = 0.65;
         this.config.onChargeChange(0.65);
       }
@@ -134,14 +215,6 @@ export class InputManager {
   private handleContextMenu = (e: MouseEvent) => {
     e.preventDefault();
   };
-
-  private triggerSwing(defaultShot: ShotType, power: number) {
-    const biasX = (this.keys['d'] || this.keys['arrowright'] ? 1 : 0) - (this.keys['a'] || this.keys['arrowleft'] ? 1 : 0);
-    const biasZ = (this.keys['w'] || this.keys['arrowup'] ? 1 : 0) - (this.keys['s'] || this.keys['arrowdown'] ? 1 : 0);
-    const bias = biasX !== 0 || biasZ !== 0 ? { x: biasX, z: biasZ } : undefined;
-
-    this.config.onSwing(defaultShot, power, bias);
-  }
 
   private attach() {
     window.addEventListener('mousemove', this.handlePointerMove);

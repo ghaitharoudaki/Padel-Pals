@@ -247,32 +247,32 @@ export function buildPadelCourt(renderer: THREE.WebGLRenderer): CourtVisuals {
     roughness: 0.25,
   });
 
-  // North Glass Wall (Opponent Baseline Glass, Z = -10m, Height 3m)
-  const backGlassGeo = new THREE.PlaneGeometry(COURT_CONFIG.width, 3.0);
+  // North Glass Wall (Opponent Baseline Glass, Z = -10m, Height 4m)
+  const backGlassGeo = new THREE.PlaneGeometry(COURT_CONFIG.width, 4.0);
   const backGlassNorth = new THREE.Mesh(backGlassGeo, glassMat);
-  backGlassNorth.position.set(0, 1.5, -halfL);
+  backGlassNorth.position.set(0, 2.0, -halfL);
   courtGroup.add(backGlassNorth);
 
   // Structural header beam over North glass
   const beamGeo = new THREE.BoxGeometry(COURT_CONFIG.width + 0.15, 0.09, 0.09);
   const beamNorth = new THREE.Mesh(beamGeo, steelFrameMat);
-  beamNorth.position.set(0, 3.045, -halfL);
+  beamNorth.position.set(0, 4.045, -halfL);
   courtGroup.add(beamNorth);
 
   // Vertical steel posts for North glass panels
   [-halfW, -halfW / 2, 0, halfW / 2, halfW].forEach(px => {
-    const glassPost = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 3.0, 12), steelFrameMat);
-    glassPost.position.set(px, 1.5, -halfL);
+    const glassPost = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 4.0, 12), steelFrameMat);
+    glassPost.position.set(px, 2.0, -halfL);
     courtGroup.add(glassPost);
   });
 
-  // South Glass Wall (Player Baseline Glass, Z = +10m)
+  // South Glass Wall (Player Baseline Glass, Z = +10m, Height 4m)
   const backGlassSouth = new THREE.Mesh(backGlassGeo, glassMat);
-  backGlassSouth.position.set(0, 1.5, halfL);
+  backGlassSouth.position.set(0, 2.0, halfL);
   courtGroup.add(backGlassSouth);
 
   const beamSouth = new THREE.Mesh(beamGeo, steelFrameMat);
-  beamSouth.position.set(0, 3.045, halfL);
+  beamSouth.position.set(0, 4.045, halfL);
   courtGroup.add(beamSouth);
 
   // Side Glass Panels (First 4m extending from corners along the sidelines)

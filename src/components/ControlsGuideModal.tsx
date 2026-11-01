@@ -1,5 +1,6 @@
 import React from 'react';
-import { Gamepad2, Mouse, Keyboard, X, ShieldAlert, Sparkles, Zap } from 'lucide-react';
+import { Gamepad2, X, Sparkles, Zap, ShieldAlert, Check } from 'lucide-react';
+import { padelAudio } from '../game/audio';
 
 interface Props {
   isOpen: boolean;
@@ -10,96 +11,114 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-zinc-900 border border-white/15 rounded-3xl shadow-2xl p-6 sm:p-8 text-white max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150 font-sans">
+      <div
+        className="w-full max-w-lg bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 relative text-slate-950 max-h-[90vh] overflow-y-auto"
+        style={{ boxShadow: '8px 8px 0px #0f172a' }}
+      >
         <button
-          onClick={onClose}
-          className="absolute top-5 right-5 text-zinc-400 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition"
-          aria-label="Close controls guide"
+          onClick={() => {
+            padelAudio.playBackWhoosh();
+            onClose();
+          }}
+          className="absolute top-5 right-5 w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 border-3 border-slate-900 flex items-center justify-center transition active:scale-95"
+          style={{ boxShadow: '3px 3px 0px #0f172a' }}
+          title="Close Guide"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5 stroke-[3]" />
         </button>
 
         <div className="flex items-center gap-3.5 mb-6">
-          <div className="p-3 bg-cyan-500/20 text-cyan-400 rounded-2xl border border-cyan-500/30">
-            <Gamepad2 className="w-6 h-6" />
+          <div className="w-12 h-12 rounded-2xl bg-emerald-400 border-3 border-slate-900 flex items-center justify-center shadow">
+            <Gamepad2 className="w-7 h-7 stroke-[2.5]" />
           </div>
           <div>
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight">Controls & Mechanics Guide</h2>
-            <p className="text-xs text-zinc-400">Intuitive one-key action, auto-shots, and true padel physics</p>
+            <h2 className="font-brand text-3xl uppercase tracking-wide leading-none">
+              HOW TO PLAY
+            </h2>
+            <p className="text-xs font-bold text-slate-600 mt-0.5">
+              Controls, smart auto-shots & glass wall rules
+            </p>
           </div>
         </div>
 
         <div className="space-y-4">
-          {/* Highlight: Intuitive Auto-Shot Selection */}
-          <div className="p-4 bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-sky-900/40 border border-cyan-400/30 rounded-2xl space-y-2">
-            <div className="flex items-center gap-2 text-sm font-black text-cyan-300">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <span>Smart Auto-Shot System (No Number Key Spam!)</span>
+          {/* Smart Auto-Shot System */}
+          <div className="p-4 bg-amber-50 border-3 border-slate-900 rounded-2xl space-y-2">
+            <div className="flex items-center gap-2 font-brand text-lg uppercase text-slate-950">
+              <Sparkles className="w-5 h-5 text-amber-500 fill-current" />
+              <span>Smart Auto-Shots (No Key Spam!)</span>
             </div>
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              The game automatically detects the ideal shot type based on incoming ball height and your directional inputs:
+            <p className="text-xs font-bold text-slate-700 leading-relaxed">
+              The game automatically triggers the perfect shot based on ball height and your movement direction:
             </p>
             <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-              <div className="bg-black/30 p-2.5 rounded-xl border border-white/10">
-                <span className="font-bold text-rose-400 block">💥 Overhead Smash</span>
-                <span className="text-zinc-400">Triggered automatically when ball is high overhead</span>
+              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
+                <span className="font-brand text-sm text-rose-600 uppercase block">💥 Smash</span>
+                <span className="text-[11px] font-bold text-slate-600">Triggered automatically when ball is high</span>
               </div>
-              <div className="bg-black/30 p-2.5 rounded-xl border border-white/10">
-                <span className="font-bold text-violet-400 block">🌈 Deep Lob</span>
-                <span className="text-zinc-400">Hold W / Up Arrow while swinging to loft deep</span>
+              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
+                <span className="font-brand text-sm text-indigo-600 uppercase block">🌈 Deep Lob</span>
+                <span className="text-[11px] font-bold text-slate-600">Hold W / Up arrow while swinging</span>
               </div>
-              <div className="bg-black/30 p-2.5 rounded-xl border border-white/10">
-                <span className="font-bold text-pink-400 block">🍃 Soft Drop Touch</span>
-                <span className="text-zinc-400">Hold S / Down Arrow when ball is low near net</span>
+              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
+                <span className="font-brand text-sm text-pink-600 uppercase block">🍃 Soft Drop</span>
+                <span className="text-[11px] font-bold text-slate-600">Hold S / Down arrow near the net</span>
               </div>
-              <div className="bg-black/30 p-2.5 rounded-xl border border-white/10">
-                <span className="font-bold text-amber-400 block">🎯 Power Drive</span>
-                <span className="text-zinc-400">Standard crisp penetrating baseline drive</span>
+              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
+                <span className="font-brand text-sm text-amber-600 uppercase block">🎯 Power Drive</span>
+                <span className="text-[11px] font-bold text-slate-600">Standard crisp penetrating baseline drive</span>
               </div>
             </div>
           </div>
 
-          {/* Mouse & Spacebar Controls */}
-          <div className="p-4 bg-zinc-800/70 border border-white/10 rounded-2xl space-y-3">
-            <div className="flex items-center gap-2 text-sm font-bold text-amber-400">
-              <Zap className="w-4 h-4" />
-              One-Key & Mouse Action
+          {/* Key Actions */}
+          <div className="p-4 bg-slate-50 border-3 border-slate-900 rounded-2xl space-y-2.5">
+            <div className="flex items-center gap-2 font-brand text-lg uppercase text-slate-950">
+              <Zap className="w-5 h-5 text-cyan-500 fill-current" />
+              <span>Key Bindings</span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="bg-zinc-900/70 p-2.5 rounded-xl border border-white/5">
-                <span className="font-bold text-white block">SPACEBAR or Left Click</span>
-                <span className="text-zinc-400">Hold to charge power, release to strike!</span>
+              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
+                <span className="font-brand text-sm text-slate-950 block">SPACE / LEFT CLICK</span>
+                <span className="text-[11px] font-bold text-slate-600">Hold to charge power, release to swing</span>
               </div>
-              <div className="bg-zinc-900/70 p-2.5 rounded-xl border border-white/5">
-                <span className="font-bold text-white block">Right Click</span>
-                <span className="text-zinc-400">Instant power smash or strike</span>
+              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
+                <span className="font-brand text-sm text-slate-950 block">WASD / ARROWS</span>
+                <span className="text-[11px] font-bold text-slate-600">Move player & steer shot angle in real time</span>
               </div>
-              <div className="bg-zinc-900/70 p-2.5 rounded-xl border border-white/5">
-                <span className="font-bold text-white block">WASD / Arrow Keys</span>
-                <span className="text-zinc-400">Move player & steer shot angle in real-time</span>
+              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
+                <span className="font-brand text-sm text-slate-950 block">SHIFT KEY</span>
+                <span className="text-[11px] font-bold text-slate-600">Sprint for rapid court coverage</span>
               </div>
-              <div className="bg-zinc-900/70 p-2.5 rounded-xl border border-white/5">
-                <span className="font-bold text-white block">Shift Key</span>
-                <span className="text-zinc-400">Sprint for rapid court coverage</span>
+              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
+                <span className="font-brand text-sm text-slate-950 block">RIGHT CLICK</span>
+                <span className="text-[11px] font-bold text-slate-600">Instant smash or drive</span>
               </div>
             </div>
           </div>
 
-          {/* Realistic Padel Rules Tip */}
-          <div className="p-3.5 bg-blue-950/40 border border-blue-500/30 rounded-2xl flex items-start gap-3">
-            <ShieldAlert className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-blue-200 leading-relaxed">
-              <span className="font-bold text-white block mb-0.5">Padel Glass Wall Rule:</span>
-              The ball MUST bounce once on the blue court turf before touching the rear glass wall. After it bounces on the floor, you can let it rebound off the rear glass and hit it on the way back!
+          {/* Glass Wall Rules Tip */}
+          <div className="p-3.5 bg-cyan-100 border-3 border-slate-900 rounded-2xl flex items-start gap-3">
+            <ShieldAlert className="w-6 h-6 text-cyan-700 flex-shrink-0 mt-0.5" />
+            <div className="text-xs font-bold text-slate-800 leading-relaxed">
+              <span className="font-brand text-sm uppercase text-slate-950 block mb-0.5">
+                Padel Glass Wall Rule:
+              </span>
+              The ball MUST bounce once on the court turf before contacting the rear glass wall. After it bounces off the glass, you can hit it on the rebound!
             </div>
           </div>
 
           <button
-            onClick={onClose}
-            className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-black text-sm uppercase tracking-wider rounded-2xl transition shadow-xl shadow-blue-600/30 active:scale-98"
+            onClick={() => {
+              padelAudio.playClickPop();
+              onClose();
+            }}
+            className="w-full py-3.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-brand text-xl uppercase tracking-wider rounded-2xl border-4 border-slate-900 transition active:scale-98 flex items-center justify-center gap-2"
+            style={{ boxShadow: '4px 4px 0px #0f172a' }}
           >
-            Got it, Let's Play!
+            <Check className="w-6 h-6 stroke-[3]" />
+            GOT IT, LET'S PLAY!
           </button>
         </div>
       </div>
