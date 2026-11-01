@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 export type GameMode = '1v1' | '2v2' | 'online' | 'practice';
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'amateur' | 'pro' | 'legend';
 export type ShotType = 'flat' | 'topspin' | 'slice' | 'smash' | 'lob' | 'drop';
@@ -36,13 +38,17 @@ export interface PlayerCustomization {
 
 export interface PlayerState {
   id: string;
+  slot: 1 | 2 | 3 | 4;
   name: string;
   role: PlayerRole;
+  isBot: boolean;
   side: Side;
   team: 'blue' | 'red';
   zone: 'left' | 'right'; // doubles court half: left (x < 0) or right (x > 0)
   position: Vector3D;
   velocity: Vector3D;
+  state: string;
+  mesh: THREE.Object3D;
   targetPosition: Vector3D;
   rotationY: number;
   racketRotation: Vector3D;
@@ -106,4 +112,3 @@ export interface MultiplayerMessage {
   scoreState?: Partial<ScoreState>;
   timestamp?: number;
 }
-

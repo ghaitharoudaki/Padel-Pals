@@ -12,6 +12,7 @@ import {
   Side,
   Vector3D,
 } from './game/types';
+import { advancePlayer, createPlayerState, getPlayerRoster, setPlayerPosition } from './game/player';
 import {
   createInitialBall,
   stepBallPhysics,
@@ -137,102 +138,60 @@ export default function App() {
   const [mySide, setMySide] = useState<Side>('south');
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
 
-  // 4 Player States (Always present for true Doubles Padel)
-  const p1Ref = useRef<PlayerState>({
-    id: 'p1',
-    name: 'Player 1',
-    role: 'human',
-    side: 'south',
-    team: 'blue',
-    zone: 'left',
-    position: { x: -2.0, y: 0, z: 7.2 },
-    velocity: { x: 0, y: 0, z: 0 },
-    targetPosition: { x: -2.0, y: 0, z: 7.2 },
-    rotationY: Math.PI,
-    racketRotation: { x: 0, y: 0, z: 0 },
-    racketSwingProgress: 0,
-    isSwinging: false,
-    swingSide: 'forehand',
-    currentShotType: 'flat',
-    swingPower: 0.65,
-    isServing: true,
-    customization: DEFAULT_P1_CUSTOM,
-    score: 0,
-    currentPoints: 0,
-    hasAdvantage: false,
-  });
-
-  const p3Ref = useRef<PlayerState>({
-    id: 'p3',
-    name: 'Carlos',
-    role: 'bot',
-    side: 'south',
-    team: 'blue',
-    zone: 'right',
-    position: { x: 2.0, y: 0, z: 7.2 },
-    velocity: { x: 0, y: 0, z: 0 },
-    targetPosition: { x: 2.0, y: 0, z: 7.2 },
-    rotationY: Math.PI,
-    racketRotation: { x: 0, y: 0, z: 0 },
-    racketSwingProgress: 0,
-    isSwinging: false,
-    swingSide: 'forehand',
-    currentShotType: 'flat',
-    swingPower: 0.65,
-    isServing: false,
-    customization: DEFAULT_P3_CUSTOM,
-    score: 0,
-    currentPoints: 0,
-    hasAdvantage: false,
-  });
-
-  const p2Ref = useRef<PlayerState>({
-    id: 'p2',
-    name: 'Alejandro',
-    role: 'bot',
-    side: 'north',
-    team: 'red',
-    zone: 'left',
-    position: { x: -2.0, y: 0, z: -7.2 },
-    velocity: { x: 0, y: 0, z: 0 },
-    targetPosition: { x: -2.0, y: 0, z: -7.2 },
-    rotationY: 0,
-    racketRotation: { x: 0, y: 0, z: 0 },
-    racketSwingProgress: 0,
-    isSwinging: false,
-    swingSide: 'forehand',
-    currentShotType: 'flat',
-    swingPower: 0.65,
-    isServing: false,
-    customization: DEFAULT_P2_CUSTOM,
-    score: 0,
-    currentPoints: 0,
-    hasAdvantage: false,
-  });
-
-  const p4Ref = useRef<PlayerState>({
-    id: 'p4',
-    name: 'Mateo',
-    role: 'bot',
-    side: 'north',
-    team: 'red',
-    zone: 'right',
-    position: { x: 2.0, y: 0, z: -7.2 },
-    velocity: { x: 0, y: 0, z: 0 },
-    targetPosition: { x: 2.0, y: 0, z: -7.2 },
-    rotationY: 0,
-    racketRotation: { x: 0, y: 0, z: 0 },
-    racketSwingProgress: 0,
-    isSwinging: false,
-    swingSide: 'forehand',
-    currentShotType: 'flat',
-    swingPower: 0.65,
-    isServing: false,
-    customization: DEFAULT_P4_CUSTOM,
-    score: 0,
-    currentPoints: 0,
-    hasAdvantage: false,
-  });
+  // Four authoritative player slots. Online mode can replace any bot slot with
+  // a remote human later without changing the simulation or render loop.
+  const p1Ref = useRef<PlayerState>(
+    createPlayerState({
+      id: 'p1',
+      slot: 1,
+      name: 'Player 1',
+      side: 'south',
+      team: 'blue',
+      zone: 'left',
+      isBot: false,
+      position: { x: -2.0, y: 0, z: 7.2 },
+      customization: DEFAULT_P1_CUSTOM,
+    })
+  );
+  const p2Ref = useRef<PlayerState>(
+    createPlayerState({
+      id: 'p2',
+      slot: 2,
+      name: 'Alejandro',
+      side: 'north',
+      team: 'red',
+      zone: 'left',
+      isBot: true,
+      position: { x: -2.0, y: 0, z: -7.2 },
+      customization: DEFAULT_P2_CUSTOM,
+    })
+  );
+  const p3Ref = useRef<PlayerState>(
+    createPlayerState({
+      id: 'p3',
+      slot: 3,
+      name: 'Carlos',
+      side: 'south',
+      team: 'blue',
+      zone: 'right',
+      isBot: true,
+      position: { x: 2.0, y: 0, z: 7.2 },
+      customization: DEFAULT_P3_CUSTOM,
+    })
+  );
+  const p4Ref = useRef<PlayerState>(
+    createPlayerState({
+      id: 'p4',
+      slot: 4,
+      name: 'Mateo',
+      side: 'north',
+      team: 'red',
+      zone: 'right',
+      isBot: true,
+      position: { x: 2.0, y: 0, z: -7.2 },
+      customization: DEFAULT_P4_CUSTOM,
+    })
+  );
 
   const ballRef = useRef<BallState>(createInitialBall('south'));
   const scoreRef = useRef<ScoreState>(score);
@@ -370,10 +329,22 @@ export default function App() {
     const p3Avatar: AvatarController = buildPadelAvatar(p3Ref.current.customization, 'south', 7.2, '4');
     const p4Avatar: AvatarController = buildPadelAvatar(p4Ref.current.customization, 'north', -7.2, '10');
 
-    scene.add(p1Avatar.group);
-    scene.add(p2Avatar.group);
-    scene.add(p3Avatar.group);
-    scene.add(p4Avatar.group);
+    const avatars: Record<string, AvatarController> = {
+      p1: p1Avatar,
+      p2: p2Avatar,
+      p3: p3Avatar,
+      p4: p4Avatar,
+    };
+    const players = getPlayerRoster([p1Ref.current, p2Ref.current, p3Ref.current, p4Ref.current]);
+    players.forEach((player) => {
+      const avatar = avatars[player.id];
+      player.mesh = avatar.group;
+      avatar.group.name = `player-${player.id}`;
+      avatar.group.position.set(player.position.x, player.position.y, player.position.z);
+      avatar.setVisible(true);
+      scene.add(player.mesh);
+      console.info(`[spawn] ${player.id} team=${player.team} slot=${player.slot} bot=${player.isBot}`);
+    });
 
     // Point scoring handler with freeze & 3s notification pause
     function onPointFinished(winner: Side, reason: string) {
@@ -419,10 +390,10 @@ export default function App() {
         p2Ref.current.isServing = nextServing === 'north';
 
         const isD = gameModeRef.current !== '1v1';
-        p1Ref.current.position = { x: isD ? -2.0 : 0, y: 0, z: 7.2 };
-        p3Ref.current.position = { x: 2.0, y: 0, z: 7.2 };
-        p2Ref.current.position = { x: isD ? -2.0 : 0, y: 0, z: -7.2 };
-        p4Ref.current.position = { x: 2.0, y: 0, z: -7.2 };
+        setPlayerPosition(p1Ref.current, { x: isD ? -2.0 : 0, y: 0, z: 7.2 });
+        setPlayerPosition(p3Ref.current, { x: 2.0, y: 0, z: 7.2 });
+        setPlayerPosition(p2Ref.current, { x: isD ? -2.0 : 0, y: 0, z: -7.2 });
+        setPlayerPosition(p4Ref.current, { x: 2.0, y: 0, z: -7.2 });
 
         const freshBall = createInitialBall(
           nextServing,
@@ -524,6 +495,20 @@ export default function App() {
     window.addEventListener('resize', handleResize);
 
     let lastDebugSync = 0;
+    const previousPositions: Record<string, Vector3D> = {};
+    players.forEach((player) => {
+      previousPositions[player.id] = { ...player.position };
+    });
+    let previousBallPosition: Vector3D = { ...ballRef.current.position };
+
+    const interpolatePosition = (previous: Vector3D | undefined, current: Vector3D, alpha: number): Vector3D => {
+      if (!previous) return { ...current };
+      return {
+        x: previous.x + (current.x - previous.x) * alpha,
+        y: previous.y + (current.y - previous.y) * alpha,
+        z: previous.z + (current.z - previous.z) * alpha,
+      };
+    };
 
     // 60 Hz Fixed-Timestep Loop Instance
     const gameLoop = new FixedTimestepLoop(
@@ -536,9 +521,14 @@ export default function App() {
           const p3 = p3Ref.current;
           const p4 = p4Ref.current;
           const keys = inputManager.getKeys();
+          players.forEach((player) => {
+            previousPositions[player.id] = { ...player.position };
+          });
+          previousBallPosition = { ...ballRef.current.position };
 
           // A. Player 1 Movement & Auto-shot
           if (isFrozenRef.current) {
+            p1.state = 'Frozen';
             p1.velocity.x = 0;
             p1.velocity.z = 0;
           } else {
@@ -559,6 +549,7 @@ export default function App() {
             const p1MaxX = isDoubles ? 0.4 : 4.4;
             p1.position.x = Math.max(-4.4, Math.min(p1MaxX, p1.position.x + p1.velocity.x * fixedDt));
             p1.position.z = Math.max(1.2, Math.min(9.2, p1.position.z + p1.velocity.z * fixedDt));
+            p1.state = Math.hypot(p1.velocity.x, p1.velocity.z) > 0.1 ? 'Moving' : 'Ready';
 
             // Auto-shot selection
             const autoShot = computeAutoShot(ballRef.current, p1.position, keys, chargePowerRef.current);
@@ -577,12 +568,13 @@ export default function App() {
           }
 
           // B. South Teammate (P3 Carlos) AI Update
-          if (isDoubles) {
+          if (isDoubles && p3.isBot) {
             const p3Decision = updateBotAI(p3, ballRef.current, p2, botDifficultyRef.current, fixedDt, true, p1);
-            p3.position = p3Decision.targetPosition;
             p3.velocity = p3Decision.velocity;
+            advancePlayer(p3, fixedDt);
             p3.swingSide = p3Decision.swingSide;
             p3.currentShotType = p3Decision.shotType;
+            p3.state = p3Decision.stateDescription;
 
             if (p3Decision.wantsToSwing) {
               p3.isSwinging = true;
@@ -609,18 +601,19 @@ export default function App() {
           }
 
           // C. North Opponent (P2 Alejandro) AI Update
-          if (gameModeRef.current !== 'online') {
+          if (p2.isBot) {
             const p2Decision = updateBotAI(p2, ballRef.current, p1, botDifficultyRef.current, fixedDt, isDoubles, p4);
-            p2.position = p2Decision.targetPosition;
             p2.velocity = p2Decision.velocity;
+            advancePlayer(p2, fixedDt);
             p2.swingSide = p2Decision.swingSide;
             p2.currentShotType = p2Decision.shotType;
+            p2.state = p2Decision.stateDescription;
 
             if (p2Decision.wantsToSwing) {
               p2.isSwinging = true;
               p2.racketSwingProgress = 0;
               if (p2.isServing && !ballRef.current.inPlay) {
-                const struck = executePadelServe(ballRef.current, 'north', 'right', p2Decision.power);
+                const struck = executePadelServe(ballRef.current, 'north', p2.zone, p2Decision.power);
                 ballRef.current = struck;
                 p2.isServing = false;
                 padelAudio.playRacketHit(p2Decision.power, p2Decision.shotType, 'GOOD');
@@ -647,12 +640,13 @@ export default function App() {
             }
 
             // D. North Partner (P4 Mateo) AI Update
-            if (isDoubles) {
+            if (isDoubles && p4.isBot) {
               const p4Decision = updateBotAI(p4, ballRef.current, p3, botDifficultyRef.current, fixedDt, true, p2);
-              p4.position = p4Decision.targetPosition;
               p4.velocity = p4Decision.velocity;
+              advancePlayer(p4, fixedDt);
               p4.swingSide = p4Decision.swingSide;
               p4.currentShotType = p4Decision.shotType;
+              p4.state = p4Decision.stateDescription;
 
               if (p4Decision.wantsToSwing) {
                 p4.isSwinging = true;
@@ -702,7 +696,7 @@ export default function App() {
         },
 
         // 2. INTERPOLATED RENDERING & VISUAL UPDATE
-        render: (_alpha, dt) => {
+        render: (alpha, dt) => {
           const now = performance.now();
           const isMenu = gameStateRef.current === 'menu';
           const isDoubles = gameModeRef.current !== '1v1';
@@ -714,7 +708,12 @@ export default function App() {
           inputManager.update(now, ballRef.current.position, p1.position, currentShotRef.current);
 
           // Ball Visuals
-          ballMesh.position.set(ballRef.current.position.x, ballRef.current.position.y, ballRef.current.position.z);
+          const renderedBallPosition = interpolatePosition(
+            previousBallPosition,
+            ballRef.current.position,
+            alpha
+          );
+          ballMesh.position.set(renderedBallPosition.x, renderedBallPosition.y, renderedBallPosition.z);
 
           const trail = ballRef.current.trail;
           for (let i = 0; i < trail.length && i < maxTrailPoints; i++) {
@@ -757,9 +756,14 @@ export default function App() {
             p2Avatar.setVisible(true);
             p3Avatar.setVisible(isDoubles);
             p4Avatar.setVisible(isDoubles);
+            players.forEach((player) => {
+              const avatar = avatars[player.id];
+              avatar.group.visible = player.id === 'p1' || isDoubles;
+              const renderedPosition = interpolatePosition(previousPositions[player.id], player.position, alpha);
+              avatar.group.position.set(renderedPosition.x, renderedPosition.y, renderedPosition.z);
+            });
 
             // P1 Avatar
-            p1Avatar.group.position.set(p1.position.x, p1.position.y, p1.position.z);
             const p1TargetAngle = Math.atan2(
               mouseAimRef.current.x - p1.position.x,
               mouseAimRef.current.z - p1.position.z
@@ -776,7 +780,6 @@ export default function App() {
             );
 
             // P2 Avatar (Opponent Bot)
-            p2Avatar.group.position.set(p2.position.x, p2.position.y, p2.position.z);
             const p2TargetAngle = Math.atan2(
               p1.position.x - p2.position.x,
               p1.position.z - p2.position.z
@@ -794,7 +797,6 @@ export default function App() {
 
             // P3 Avatar (Teammate Bot in 2v2)
             if (isDoubles) {
-              p3Avatar.group.position.set(p3.position.x, p3.position.y, p3.position.z);
               const p3TargetAngle = Math.atan2(
                 ballRef.current.position.x - p3.position.x,
                 ballRef.current.position.z - p3.position.z
@@ -811,7 +813,6 @@ export default function App() {
               );
 
               // P4 Avatar (Opponent Bot in 2v2)
-              p4Avatar.group.position.set(p4.position.x, p4.position.y, p4.position.z);
               const p4TargetAngle = Math.atan2(
                 p3.position.x - p4.position.x,
                 p3.position.z - p4.position.z
@@ -885,10 +886,10 @@ export default function App() {
     gameModeRef.current = mode;
 
     const isD = mode !== '1v1';
-    p1Ref.current.position = { x: isD ? -2.0 : 0, y: 0, z: 7.2 };
-    p3Ref.current.position = { x: 2.0, y: 0, z: 7.2 };
-    p2Ref.current.position = { x: isD ? -2.0 : 0, y: 0, z: -7.2 };
-    p4Ref.current.position = { x: 2.0, y: 0, z: -7.2 };
+    setPlayerPosition(p1Ref.current, { x: isD ? -2.0 : 0, y: 0, z: 7.2 });
+    setPlayerPosition(p3Ref.current, { x: 2.0, y: 0, z: 7.2 });
+    setPlayerPosition(p2Ref.current, { x: isD ? -2.0 : 0, y: 0, z: -7.2 });
+    setPlayerPosition(p4Ref.current, { x: 2.0, y: 0, z: -7.2 });
     ballRef.current = createInitialBall('south', p1Ref.current.position);
   };
 
@@ -942,12 +943,12 @@ export default function App() {
     setScore(initScore);
     scoreRef.current = initScore;
     const isD = gameMode !== '1v1';
-    p1Ref.current.position = { x: isD ? -2.0 : 0, y: 0, z: 7.2 };
+    setPlayerPosition(p1Ref.current, { x: isD ? -2.0 : 0, y: 0, z: 7.2 });
     p1Ref.current.isServing = true;
-    p3Ref.current.position = { x: 2.0, y: 0, z: 7.2 };
-    p2Ref.current.position = { x: isD ? -2.0 : 0, y: 0, z: -7.2 };
+    setPlayerPosition(p3Ref.current, { x: 2.0, y: 0, z: 7.2 });
+    setPlayerPosition(p2Ref.current, { x: isD ? -2.0 : 0, y: 0, z: -7.2 });
     p2Ref.current.isServing = false;
-    p4Ref.current.position = { x: 2.0, y: 0, z: -7.2 };
+    setPlayerPosition(p4Ref.current, { x: 2.0, y: 0, z: -7.2 });
     ballRef.current = createInitialBall('south');
     setGameState('playing');
   };

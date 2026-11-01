@@ -203,7 +203,7 @@ export function stepBallPhysics(
         bouncedGlassWall = true;
       } else {
         // Wire mesh damping ~0.60 with realistic minor grid deflection
-        const deflection = (Math.random() - 0.5) * 0.6;
+        const deflection = Math.sin((b.position.z + b.position.x + b.bounceCount) * 17.31) * 0.3;
         b.velocity.x = (isEast ? -1 : 1) * Math.abs(b.velocity.x) * 0.60;
         b.velocity.z = b.velocity.z * 0.85 + deflection;
         bouncedMeshWall = true;
@@ -257,25 +257,35 @@ export function predictBallLanding(ball: BallState): {
   let vy = ball.velocity.y;
   let vz = ball.velocity.z;
 
-  const dt = 0.04;
+  const dt = 1 / 120;
   let time = 0;
   let willReboundGlass = false;
 
-  for (let step = 0; step < 90; step++) {
+  for (let step = 0; step < 360; step++) {
     time += dt;
+    vx *= 1 - AIR_DRAG_COEFF * Math.abs(vx) * dt;
     vy -= GRAVITY * dt;
+    vy *= 1 - AIR_DRAG_COEFF * Math.abs(vy) * dt;
+    vz *= 1 - AIR_DRAG_COEFF * Math.abs(vz) * dt;
     px += vx * dt;
     py += vy * dt;
     pz += vz * dt;
 
-    if (Math.abs(pz) >= 9.8) {
+    if (Math.abs(px) + ball.radius >= COURT_CONFIG.width / 2) {
+      px = Math.sign(px) * (COURT_CONFIG.width / 2 - ball.radius);
+      vx *= -0.75;
+      willReboundGlass = true;
+    }
+    if (Math.abs(pz) + ball.radius >= COURT_CONFIG.length / 2) {
+      pz = Math.sign(pz) * (COURT_CONFIG.length / 2 - ball.radius);
+      vz *= -0.75;
       willReboundGlass = true;
     }
 
     if (py <= ball.radius) {
       return {
-        x: Math.max(-4.8, Math.min(4.8, px)),
-        z: Math.max(-9.8, Math.min(9.8, pz)),
+        x: Math.max(-COURT_CONFIG.width / 2 + ball.radius, Math.min(COURT_CONFIG.width / 2 - ball.radius, px)),
+        z: Math.max(-COURT_CONFIG.length / 2 + ball.radius, Math.min(COURT_CONFIG.length / 2 - ball.radius, pz)),
         timeToBounce: time,
         willReboundGlass,
       };
@@ -353,9 +363,9 @@ export function strikeBallWithRacket(
   const dist = Math.hypot(dx, dz);
 
   // Distinct shot physics parameters
-  const baseSpeed = 12.0 + power * 5.5;
+  const baseSpeed = 7.5 + power * 3.2;
   let speed = baseSpeed;
-  let vy = 3.8 + power * 1.2;
+  let vy = 4.8 + power * 1.2;
   let spinX = 0;
   let spinY = (aimX - playerPos.x) * 1.8;
 
@@ -376,26 +386,26 @@ export function strikeBallWithRacket(
     case 'slice':
       // Bandeja / Vibora slice: low-skimming trajectory that checks and skids off back glass
       speed = baseSpeed * 1.05;
-      vy = 3.2 + power * 0.7;
+      vy = 4.6 + power * 0.7;
       spinX = -32;
       break;
     case 'drop':
       // Soft touch drop: lands short just past the net
       speed = baseSpeed * 0.54;
-      vy = 3.4;
+      vy = 4.6;
       spinX = -28;
       break;
     case 'topspin':
       // Heavy topspin: dips sharply into baseline
       speed = baseSpeed * 1.14;
-      vy = 4.2 + power * 1.1;
+      vy = 5.0 + power * 1.1;
       spinX = 32;
       break;
     case 'flat':
     default:
       // Balanced direct drive
       speed = baseSpeed * 1.02;
-      vy = 3.6 + power * 1.0;
+      vy = 4.8 + power * 1.0;
       spinX = 6;
       break;
   }

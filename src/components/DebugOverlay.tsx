@@ -68,6 +68,12 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
           <span className="text-amber-300 font-bold">{ballSpeed} m/s</span>
         </div>
         <div>
+          <span className="text-[10px] text-zinc-500 block uppercase">Ball Position</span>
+          <span className="text-amber-200 font-bold">
+            {ball.position.x.toFixed(2)}, {ball.position.y.toFixed(2)}, {ball.position.z.toFixed(2)}
+          </span>
+        </div>
+        <div>
           <span className="text-[10px] text-zinc-500 block uppercase">Ball Status</span>
           <span className={ball.inPlay ? 'text-emerald-400 font-bold' : 'text-zinc-400 font-bold'}>
             {ball.inPlay ? `In Play (B:${ball.bounceCount})` : 'Dead / Waiting Serve'}
@@ -109,9 +115,9 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
               <th className="pb-1.5 font-bold">Player</th>
               <th className="pb-1.5 font-bold">Team</th>
               <th className="pb-1.5 font-bold">Type</th>
-              <th className="pb-1.5 font-bold">Position (X, Z)</th>
+              <th className="pb-1.5 font-bold">Position (X, Y, Z)</th>
               <th className="pb-1.5 font-bold">Velocity</th>
-              <th className="pb-1.5 font-bold">Action / Swing</th>
+              <th className="pb-1.5 font-bold">State</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
@@ -148,11 +154,11 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
                           : 'bg-purple-500/20 text-purple-300 border border-purple-400/30'
                       }`}
                     >
-                      {p.role}
+                      {p.isBot ? 'bot' : 'human'}
                     </span>
                   </td>
                   <td className="py-1.5 text-zinc-300 font-mono">
-                    {p.position.x.toFixed(2)}, {p.position.z.toFixed(2)}
+                    {p.position.x.toFixed(2)}, {p.position.y.toFixed(2)}, {p.position.z.toFixed(2)}
                   </td>
                   <td className="py-1.5 text-zinc-300 font-mono">
                     {speed} m/s
@@ -168,7 +174,7 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
                     ) : speed !== '0.0' ? (
                       <span className="text-zinc-300">Moving</span>
                     ) : (
-                      <span className="text-zinc-500">Ready</span>
+                      <span className="text-zinc-500">{p.state}</span>
                     )}
                   </td>
                 </tr>
