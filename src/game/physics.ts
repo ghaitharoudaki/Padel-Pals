@@ -1,4 +1,4 @@
-import {
+﻿import {
   AimAssist,
   BallState,
   COURT_CONFIG,
@@ -113,11 +113,19 @@ export function stepBallPhysics(
 
     // Predict swept path
     const p0 = { ...b.position };
-    const p1 = {
+    let p1 = {
       x: p0.x + b.velocity.x * subDt,
       y: p0.y + b.velocity.y * subDt,
       z: p0.z + b.velocity.z * subDt,
     };
+
+    // Lobs remain playable inside the court envelope. A high lob may rebound
+    // off the glass, but must not escape above the back-wall height and become
+    // an artificial point fault.
+    if (b.lastShotType === 'lob' && p1.y > COURT_CONFIG.glassBackWallHeight - r) {
+      p1 = { ...p1, y: COURT_CONFIG.glassBackWallHeight - r };
+      b.velocity.y = -Math.abs(b.velocity.y) * 0.45;
+    }
 
     // 2. Continuous Net Collision check at z = 0 (|x| <= 5.0)
     if ((p0.z > 0 && p1.z <= 0) || (p0.z < 0 && p1.z >= 0)) {
@@ -642,6 +650,12 @@ export function strikeBallWithRacket(
 
   const vx = dirX * speed;
   const vz = dirZ * speed;
+  const flightTime = dist / Math.max(speed, 5.0);
+  if (shotType !== 'smash' && flightTime > 0.05) {
+    // Solve the vertical component for the selected ground target instead of
+    // relying on a generic arc. This keeps the landing point under the cursor.
+    vy = (0.12 - ball.position.y + 0.5 * GRAVITY * flightTime * flightTime) / flightTime;
+  }
 
   return {
     ...ball,
@@ -656,6 +670,7 @@ export function strikeBallWithRacket(
     wallHitCount: 0,
     lastWallType: null,
     isServe: false,
+    lastShotType: shotType,
     inPlay: true,
   };
 }

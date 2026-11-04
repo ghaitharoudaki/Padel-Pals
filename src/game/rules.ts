@@ -255,3 +255,7 @@ export function getServeTargetBox(scoreOrPoints: ScoreState | number): 'right' |
   const sum = scoreOrPoints.rawPoints[0] + scoreOrPoints.rawPoints[1];
   return sum % 2 === 0 ? 'right' : 'left';
 }
+
+export function getServePosition(targetBox: 'right' | 'left'): number {
+  return targetBox === 'right' ? 2.0 : -2.0;
+}

@@ -1,6 +1,6 @@
-import * as THREE from 'three';
+﻿import * as THREE from 'three';
 
-export type GameMode = '1v1' | '2v2' | 'online' | 'practice';
+export type GameMode = '1v1' | '2v2' | 'online' | 'online-1v1' | 'online-2v2' | 'practice';
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'amateur' | 'pro' | 'legend';
 export type ShotType = 'flat' | 'topspin' | 'slice' | 'smash' | 'lob' | 'drop' | 'bajada';
 export type Side = 'south' | 'north'; // south = Team Blue (Z > 0), north = Team Red (Z < 0)
@@ -53,6 +53,7 @@ export interface BallState {
   lastWallType: 'glass' | 'fence' | null;
   isServe: boolean;
   serveBoxTarget: 'left' | 'right' | null;
+  lastShotType?: ShotType;
   inPlay: boolean;
   trail: Vector3D[];
 }

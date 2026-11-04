@@ -18,37 +18,39 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
   const [text, setText] = useState<string>('3');
 
   useEffect(() => {
-    // Play tick on start
     padelAudio.playHoverTick();
+    const startedAt = performance.now();
+    let lastStep = 3;
+    let frame = 0;
+    let completed = false;
 
-    const timer1 = setTimeout(() => {
-      setCount(2);
-      setText('2');
-      padelAudio.playHoverTick();
-    }, 1000);
+    const tick = (now: number) => {
+      const elapsed = now - startedAt;
+      const nextStep = Math.max(0, 3 - Math.floor(elapsed / 1000));
+      if (nextStep !== lastStep) {
+        lastStep = nextStep;
+        setCount(nextStep);
+        if (nextStep > 0) {
+          setText(String(nextStep));
+          padelAudio.playHoverTick();
+        } else {
+          setText('VAMOS! 🔥');
+          padelAudio.playRefereeWhistle('start');
+        }
+      }
 
-    const timer2 = setTimeout(() => {
-      setCount(1);
-      setText('1');
-      padelAudio.playHoverTick();
-    }, 2000);
-
-    const timer3 = setTimeout(() => {
-      setCount(0);
-      setText('VAMOS! 🔥');
-      padelAudio.playRefereeWhistle('start');
-    }, 3000);
-
-    const timer4 = setTimeout(() => {
-      onComplete();
-    }, 3800);
-
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
-      clearTimeout(timer4);
+      if (elapsed >= 3800) {
+        if (!completed) {
+          completed = true;
+          onComplete();
+        }
+        return;
+      }
+      frame = requestAnimationFrame(tick);
     };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
   }, [onComplete]);
 
   return (

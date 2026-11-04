@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
   Users,
   Copy,
@@ -26,7 +26,7 @@ interface Props {
   onToggleReady: () => void;
   onToggleBotSlot: (slot: 1 | 2 | 3 | 4) => void;
   onFillBots: () => void;
-  onStartMatch: () => void;
+  onStartMatch: (mode: '1v1' | '2v2') => void;
   onLeaveRoom: () => void;
   currentRoomId: string | null;
   slots: LobbySlot[];
@@ -65,6 +65,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
 }) => {
   const [inputCode, setInputCode] = useState('');
   const [copied, setCopied] = useState(false);
+  const [matchMode, setMatchMode] = useState<'1v1' | '2v2'>('2v2');
 
   if (!isOpen) return null;
 
@@ -109,9 +110,30 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
               Online Multiplayer
             </h2>
             <p className="text-xs text-zinc-400 font-medium">
-              Host-authoritative 2v2 Padel with real-time prediction & zero lag
+              Host-authoritative online Padel with real-time prediction & zero lag
             </p>
           </div>
+        </div>
+
+        <div className="mb-4 flex gap-2" role="group" aria-label="Online match mode">
+          <button
+            type="button"
+            onClick={() => setMatchMode('2v2')}
+            className={`flex-1 rounded-xl border-2 px-3 py-2 text-sm font-black uppercase ${
+              matchMode === '2v2' ? 'border-blue-400 bg-blue-600' : 'border-zinc-700 bg-zinc-800'
+            }`}
+          >
+            2v2 Doubles
+          </button>
+          <button
+            type="button"
+            onClick={() => setMatchMode('1v1')}
+            className={`flex-1 rounded-xl border-2 px-3 py-2 text-sm font-black uppercase ${
+              matchMode === '1v1' ? 'border-emerald-400 bg-emerald-600' : 'border-zinc-700 bg-zinc-800'
+            }`}
+          >
+            1v1 Singles
+          </button>
         </div>
 
         {/* Error Notification */}
@@ -315,7 +337,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
 
               {isHost && (
                 <button
-                  onClick={onStartMatch}
+                  onClick={() => onStartMatch(matchMode)}
                   disabled={!allHumansReady}
                   className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-black text-sm uppercase rounded-xl border-2 border-black transition active:scale-95 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center gap-2"
                 >

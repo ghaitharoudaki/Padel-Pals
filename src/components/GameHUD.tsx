@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { ScoreState, ShotType, GameMode, Side } from '../game/types';
 import {
   Volume2,

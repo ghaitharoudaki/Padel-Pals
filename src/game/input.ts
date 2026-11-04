@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+﻿import * as THREE from 'three';
 import { AimTargetZone, HitQuality, ShotType, Vector3D } from './types';
 
 export interface SwingIntent {

@@ -78,30 +78,6 @@ export class FixedTimestepLoop {
     const alpha = this.accumulator / FIXED_TIMESTEP;
     this.callbacks.render(alpha, frameTime);
 
-    if (this.isSoftwareGl && this.renderer) {
-      this.afterDraw(this.tick);
-    } else {
-      this.frameId = requestAnimationFrame(this.tick);
-    }
+    this.frameId = requestAnimationFrame(this.tick);
   };
-
-  private afterDraw(cb: () => void) {
-    if (!this.renderer) {
-      this.frameId = window.setTimeout(cb, 16);
-      return;
-    }
-    const gl = this.renderer.getContext() as WebGL2RenderingContext;
-    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-    gl.flush();
-    const poll = () => {
-      const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
-      if (state === gl.UNSIGNALED) {
-        this.frameId = window.setTimeout(poll, 4);
-      } else {
-        gl.deleteSync(sync);
-        this.frameId = window.setTimeout(cb, 16);
-      }
-    };
-    this.frameId = window.setTimeout(poll, 4);
-  }
 }

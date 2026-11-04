@@ -26,6 +26,7 @@ interface PlayerConnection {
 interface GameRoom {
   id: string;
   players: PlayerConnection[];
+  matchMode: '1v1' | '2v2';
   ballState?: unknown;
   scoreState?: unknown;
   lastActive: number;
@@ -58,9 +59,20 @@ wss.on('connection', (ws) => {
           room = {
             id: roomId,
             players: [],
+            matchMode: msg.matchMode === '1v1' ? '1v1' : '2v2',
             lastActive: Date.now(),
           };
           rooms.set(roomId, room);
+        }
+
+        if (room.players.length > 0 && room.matchMode !== (msg.matchMode === '1v1' ? '1v1' : '2v2')) {
+          ws.send(JSON.stringify({ type: 'room_mode_mismatch', roomId, matchMode: room.matchMode }));
+          return;
+        }
+
+        if (room.players.length >= (room.matchMode === '1v1' ? 2 : 2)) {
+          ws.send(JSON.stringify({ type: 'room_full', roomId }));
+          return;
         }
 
         // Determine side: first player is South (near), second is North (far)
@@ -116,6 +128,7 @@ wss.on('connection', (ws) => {
                 type: 'room_ready',
                 roomId,
                 servingSide: 'south',
+                matchMode: room.matchMode,
               }));
             }
           });
