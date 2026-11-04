@@ -20,19 +20,31 @@ interface FanSpec {
   side: 'south' | 'north' | 'neutral';
   hasHat: boolean;
   hasFlag: boolean;
+  hasScarf: boolean;
   hatIndex: number;
   flagIndex: number;
+  scarfIndex: number;
 }
 
 /**
  * 300+ Low-Poly Chibi Spectators in toon style using InstancedMesh.
- * Zero per-fan CPU objects. Animated through per-instance matrices.
+ * Multi-part procedural models: body, head, hair, hands, hats, scarves, flags.
+ * Per-instance colors for team shirts (North Red, South Blue, Neutral mixed),
+ * diverse skin tones, hair colors, and team merchandise.
+ *
+ * ROOT CAUSE OF BLACK FANS:
+ * Previously, materials were declared with `{ vertexColors: true }`.
+ * In Three.js, when a material has `vertexColors: true` but the geometry lacks a
+ * vertex `color` attribute, WebGL passes zeroes for the missing attribute, causing
+ * `vColor` to evaluate to (0, 0, 0, 1) and multiplying diffuse by 0 (jet black).
+ * For InstancedMesh, per-instance coloring works natively via `instanceColor`
+ * with `vertexColors: false` (or default) and `color: 0xffffff`.
  */
 export function createCrowdSystem(): CrowdSystem {
   const group = new THREE.Group();
   group.name = 'PadelCrowdSystem';
 
-  // Skin tones (anime & realistic diverse palette)
+  // Diverse anime & realistic skin tones
   const skinTones = [
     0xfed7aa, // peach light
     0xfcd34d, // golden warm
@@ -61,7 +73,7 @@ export function createCrowdSystem(): CrowdSystem {
     0x60a5fa, // light azure
   ];
 
-  // Neutral mixed section jerseys (Sides / Mid-court)
+  // Neutral mixed section jerseys (Lateral stands / Mid-court)
   const neutralJerseys = [
     0x10b981, // emerald green
     0xf59e0b, // amber
@@ -69,7 +81,7 @@ export function createCrowdSystem(): CrowdSystem {
     0xec4899, // pink
     0x06b6d4, // cyan
     0xf97316, // orange
-    0xe2e8f0, // stadium white
+    0xf8fafc, // stadium crisp white
     0x334155, // slate charcoal
   ];
 
@@ -87,6 +99,7 @@ export function createCrowdSystem(): CrowdSystem {
   const fans: FanSpec[] = [];
   let hatCount = 0;
   let flagCount = 0;
+  let scarfCount = 0;
 
   // 1. Generate Stadium Grandstand Seating Positions (380+ fans)
   // North Grandstand (Team Red fans behind north glass wall, Z = -12 to -19.5)
@@ -97,8 +110,9 @@ export function createCrowdSystem(): CrowdSystem {
     for (let c = 0; c < countInRow; c++) {
       const tierX = -9.0 + (c / (countInRow - 1)) * 18.0 + (Math.random() - 0.5) * 0.15;
       const rotY = 0; // facing south towards court
-      const hasHat = Math.random() < 0.40;
-      const hasFlag = Math.random() < 0.28;
+      const hasHat = Math.random() < 0.38;
+      const hasFlag = Math.random() < 0.26;
+      const hasScarf = Math.random() < 0.35;
       fans.push({
         baseX: tierX,
         baseY: tierY,
@@ -109,8 +123,10 @@ export function createCrowdSystem(): CrowdSystem {
         side: 'north',
         hasHat,
         hasFlag,
+        hasScarf,
         hatIndex: hasHat ? hatCount++ : -1,
         flagIndex: hasFlag ? flagCount++ : -1,
+        scarfIndex: hasScarf ? scarfCount++ : -1,
       });
     }
   }
@@ -123,8 +139,9 @@ export function createCrowdSystem(): CrowdSystem {
     for (let c = 0; c < countInRow; c++) {
       const tierX = -9.0 + (c / (countInRow - 1)) * 18.0 + (Math.random() - 0.5) * 0.15;
       const rotY = Math.PI; // facing north towards court
-      const hasHat = Math.random() < 0.40;
-      const hasFlag = Math.random() < 0.28;
+      const hasHat = Math.random() < 0.38;
+      const hasFlag = Math.random() < 0.26;
+      const hasScarf = Math.random() < 0.35;
       fans.push({
         baseX: tierX,
         baseY: tierY,
@@ -135,8 +152,10 @@ export function createCrowdSystem(): CrowdSystem {
         side: 'south',
         hasHat,
         hasFlag,
+        hasScarf,
         hatIndex: hasHat ? hatCount++ : -1,
         flagIndex: hasFlag ? flagCount++ : -1,
+        scarfIndex: hasScarf ? scarfCount++ : -1,
       });
     }
   }
@@ -151,7 +170,8 @@ export function createCrowdSystem(): CrowdSystem {
       const rotY = Math.PI / 2; // facing east towards court
       const side: FanSpec['side'] = tierZ > 3.5 ? 'south' : (tierZ < -3.5 ? 'north' : 'neutral');
       const hasHat = Math.random() < 0.35;
-      const hasFlag = Math.random() < 0.25;
+      const hasFlag = Math.random() < 0.24;
+      const hasScarf = Math.random() < 0.32;
       fans.push({
         baseX: tierX,
         baseY: tierY,
@@ -162,8 +182,10 @@ export function createCrowdSystem(): CrowdSystem {
         side,
         hasHat,
         hasFlag,
+        hasScarf,
         hatIndex: hasHat ? hatCount++ : -1,
         flagIndex: hasFlag ? flagCount++ : -1,
+        scarfIndex: hasScarf ? scarfCount++ : -1,
       });
     }
   }
@@ -178,7 +200,8 @@ export function createCrowdSystem(): CrowdSystem {
       const rotY = -Math.PI / 2; // facing west towards court
       const side: FanSpec['side'] = tierZ > 3.5 ? 'south' : (tierZ < -3.5 ? 'north' : 'neutral');
       const hasHat = Math.random() < 0.35;
-      const hasFlag = Math.random() < 0.25;
+      const hasFlag = Math.random() < 0.24;
+      const hasScarf = Math.random() < 0.32;
       fans.push({
         baseX: tierX,
         baseY: tierY,
@@ -189,13 +212,15 @@ export function createCrowdSystem(): CrowdSystem {
         side,
         hasHat,
         hasFlag,
+        hasScarf,
         hatIndex: hasHat ? hatCount++ : -1,
         flagIndex: hasFlag ? flagCount++ : -1,
+        scarfIndex: hasScarf ? scarfCount++ : -1,
       });
     }
   }
 
-  const totalFans = fans.length; // ~390 spectators
+  const totalFans = fans.length; // 390 spectators
 
   // 2. Chibi Low-Poly Geometries
   // Body: Chunky rounded cylinder
@@ -206,7 +231,7 @@ export function createCrowdSystem(): CrowdSystem {
   const headGeo = new THREE.SphereGeometry(0.24, 10, 8);
   headGeo.translate(0, 0.56, 0);
 
-  // Hair cap / Spiky tuft: Slightly larger offset sphere or cone
+  // Hair cap / Spiky tuft: Slightly larger offset cone
   const hairGeo = new THREE.ConeGeometry(0.26, 0.22, 7);
   hairGeo.translate(0, 0.74, 0);
 
@@ -217,17 +242,23 @@ export function createCrowdSystem(): CrowdSystem {
   const hatGeo = new THREE.CylinderGeometry(0.25, 0.26, 0.12, 8);
   hatGeo.translate(0, 0.72, 0);
 
+  // Scarf: chunky neck band
+  const scarfGeo = new THREE.CylinderGeometry(0.23, 0.24, 0.08, 8);
+  scarfGeo.translate(0, 0.42, 0);
+
   // Team Flag: Small banner on a pole
   const flagGeo = new THREE.PlaneGeometry(0.35, 0.24);
   flagGeo.translate(0.18, 0.85, 0);
 
-  // Materials: Toon-style MeshLambertMaterial with crisp colors
-  const bodyMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const headMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const hairMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const handMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const hatMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const flagMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  // Materials: MeshLambertMaterial with color 0xffffff and NO vertexColors flag
+  // This allows Three.js's internal USE_INSTANCING_COLOR to multiply instanceColor cleanly without zeroing out!
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const headMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const hairMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const handMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const hatMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const scarfMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const flagMat = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide });
 
   // Instanced Meshes
   const bodyMesh = new THREE.InstancedMesh(bodyGeo, bodyMat, totalFans);
@@ -236,19 +267,20 @@ export function createCrowdSystem(): CrowdSystem {
   const leftHandMesh = new THREE.InstancedMesh(handGeo, handMat, totalFans);
   const rightHandMesh = new THREE.InstancedMesh(handGeo, handMat, totalFans);
   const hatMesh = new THREE.InstancedMesh(hatGeo, hatMat, Math.max(1, hatCount));
+  const scarfMesh = new THREE.InstancedMesh(scarfGeo, scarfMat, Math.max(1, scarfCount));
   const flagMesh = new THREE.InstancedMesh(flagGeo, flagMat, Math.max(1, flagCount));
-
-  bodyMesh.castShadow = true;
-  bodyMesh.receiveShadow = true;
 
   // Assign distinct instance colors (team blue, red, mixed neutral, skins)
   const dummyColor = new THREE.Color();
   const dummyMatrix = new THREE.Matrix4();
   const zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
 
-  // Initialize all hat/flag instances to zero scale first
+  // Initialize all hat/flag/scarf instances to zero scale first
   for (let i = 0; i < Math.max(1, hatCount); i++) {
     hatMesh.setMatrixAt(i, zeroMatrix);
+  }
+  for (let i = 0; i < Math.max(1, scarfCount); i++) {
+    scarfMesh.setMatrixAt(i, zeroMatrix);
   }
   for (let i = 0; i < Math.max(1, flagCount); i++) {
     flagMesh.setMatrixAt(i, zeroMatrix);
@@ -288,6 +320,13 @@ export function createCrowdSystem(): CrowdSystem {
       hatMesh.setColorAt(f.hatIndex, dummyColor);
     }
 
+    // Scarf color
+    if (f.hasScarf && f.scarfIndex >= 0) {
+      const scarfHex = Math.random() < 0.7 ? jerseyHex : 0xf8fafc;
+      dummyColor.setHex(scarfHex);
+      scarfMesh.setColorAt(f.scarfIndex, dummyColor);
+    }
+
     // Flag color
     if (f.hasFlag && f.flagIndex >= 0) {
       dummyColor.setHex(jerseyHex);
@@ -301,6 +340,7 @@ export function createCrowdSystem(): CrowdSystem {
   if (leftHandMesh.instanceColor) leftHandMesh.instanceColor.needsUpdate = true;
   if (rightHandMesh.instanceColor) rightHandMesh.instanceColor.needsUpdate = true;
   if (hatMesh.instanceColor) hatMesh.instanceColor.needsUpdate = true;
+  if (scarfMesh.instanceColor) scarfMesh.instanceColor.needsUpdate = true;
   if (flagMesh.instanceColor) flagMesh.instanceColor.needsUpdate = true;
 
   group.add(bodyMesh);
@@ -309,6 +349,7 @@ export function createCrowdSystem(): CrowdSystem {
   group.add(leftHandMesh);
   group.add(rightHandMesh);
   group.add(hatMesh);
+  group.add(scarfMesh);
   group.add(flagMesh);
 
   // Animation State Machine
@@ -339,7 +380,7 @@ export function createCrowdSystem(): CrowdSystem {
       const p = f.phase;
       const spd = f.speed;
 
-      // Base idle sway & breathing
+      // Base idle sway & breathing (asynchronous per-fan phase)
       const idleBob = Math.sin(timeSeconds * 2.8 * spd + p) * 0.025;
       const idleSway = Math.sin(timeSeconds * 1.8 * spd + p) * 0.035;
 
@@ -416,28 +457,33 @@ export function createCrowdSystem(): CrowdSystem {
       dummyMatrix.compose(scratchPos, scratchQuat, scratchScale);
       hairMesh.setMatrixAt(i, dummyMatrix);
 
-      // 4. Left Hand Matrix (transformed by fan rotation)
+      // 4. Scarf Matrix
+      if (f.hasScarf && f.scarfIndex >= 0) {
+        dummyMatrix.compose(scratchPos, scratchQuat, scratchScale);
+        scarfMesh.setMatrixAt(f.scarfIndex, dummyMatrix);
+      }
+
+      // 5. Left Hand Matrix (transformed by fan rotation)
       handOffset.set(lHandX, lHandY, lHandZ).applyQuaternion(scratchQuat);
       scratchPos.set(f.baseX + handOffset.x, f.baseY + offsetY + handOffset.y, f.baseZ + handOffset.z);
       dummyMatrix.compose(scratchPos, scratchQuat, scratchScale);
       leftHandMesh.setMatrixAt(i, dummyMatrix);
 
-      // 5. Right Hand Matrix
+      // 6. Right Hand Matrix
       handOffset.set(rHandX, rHandY, rHandZ).applyQuaternion(scratchQuat);
       scratchPos.set(f.baseX + handOffset.x, f.baseY + offsetY + handOffset.y, f.baseZ + handOffset.z);
       dummyMatrix.compose(scratchPos, scratchQuat, scratchScale);
       rightHandMesh.setMatrixAt(i, dummyMatrix);
 
-      // 6. Hat Matrix
+      // 7. Hat Matrix
       if (f.hasHat && f.hatIndex >= 0) {
         scratchPos.set(f.baseX, f.baseY + offsetY, f.baseZ);
         dummyMatrix.compose(scratchPos, scratchQuat, scratchScale);
         hatMesh.setMatrixAt(f.hatIndex, dummyMatrix);
       }
 
-      // 7. Flag Matrix
+      // 8. Flag Matrix
       if (f.hasFlag && f.flagIndex >= 0) {
-        // Flag anchored to right hand with waving tilt
         scratchEuler.set(
           rotX,
           rotY + (currentReaction === 'cheer' ? Math.sin(timeSeconds * 12.0 + p) * 0.45 : 0),
@@ -458,6 +504,7 @@ export function createCrowdSystem(): CrowdSystem {
     leftHandMesh.instanceMatrix.needsUpdate = true;
     rightHandMesh.instanceMatrix.needsUpdate = true;
     if (hatCount > 0) hatMesh.instanceMatrix.needsUpdate = true;
+    if (scarfCount > 0) scarfMesh.instanceMatrix.needsUpdate = true;
     if (flagCount > 0) flagMesh.instanceMatrix.needsUpdate = true;
   }
 
@@ -477,6 +524,7 @@ export function createCrowdSystem(): CrowdSystem {
     hairGeo.dispose();
     handGeo.dispose();
     hatGeo.dispose();
+    scarfGeo.dispose();
     flagGeo.dispose();
 
     bodyMat.dispose();
@@ -484,6 +532,7 @@ export function createCrowdSystem(): CrowdSystem {
     hairMat.dispose();
     handMat.dispose();
     hatMat.dispose();
+    scarfMat.dispose();
     flagMat.dispose();
 
     group.clear();

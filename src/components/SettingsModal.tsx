@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Settings, Volume2, Music, Eye, Award, X, Check, Zap } from 'lucide-react';
-import { CameraPreset, MatchLength } from '../game/types';
+import { Settings, Volume2, Music, Eye, Award, X, Check, Zap, Target } from 'lucide-react';
+import { CameraPreset, MatchLength, AimAssist } from '../game/types';
 import { padelAudio } from '../game/audio';
 
 interface SettingsModalProps {
@@ -14,6 +14,8 @@ interface SettingsModalProps {
   onSelectMatchLength?: (len: MatchLength) => void;
   goldenPoint?: boolean;
   onToggleGoldenPoint?: () => void;
+  aimAssist?: AimAssist;
+  onSelectAimAssist?: (level: AimAssist) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -27,6 +29,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSelectMatchLength,
   goldenPoint = false,
   onToggleGoldenPoint,
+  aimAssist = 'high',
+  onSelectAimAssist,
 }) => {
   const [sfxVol, setSfxVol] = useState(Math.round(padelAudio.sfxVolume * 100));
   const [musicVol, setMusicVol] = useState(Math.round(padelAudio.musicVolume * 100));
@@ -45,9 +49,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150 font-sans">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
       <div
-        className="w-full max-w-lg bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 relative text-slate-950 max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-lg bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 relative text-slate-950 max-h-[90vh] overflow-y-auto animate-in slide-in-from-right-8 duration-250 ease-out"
         style={{ boxShadow: '8px 8px 0px #0f172a' }}
       >
         {/* Close Button */}
@@ -184,6 +188,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <div>{m.label}</div>
                   <div className="text-[10px] font-bold opacity-80">{m.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Aim Assist Setting */}
+          <div className="p-4 rounded-2xl bg-indigo-50 border-3 border-slate-900 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-brand text-lg uppercase text-slate-900">
+                <Target className="w-5 h-5 text-indigo-600 stroke-[2.5]" />
+                <span>Aim Assist</span>
+              </div>
+              <span className="text-[11px] font-bold text-indigo-700 bg-indigo-200/80 px-2 py-0.5 rounded-md border border-indigo-400">
+                Directional 3x2 Grid
+              </span>
+            </div>
+            <p className="text-xs font-bold text-slate-600">
+              Steers shots toward your chosen target zone, guarantees net clearance and keeps balls in-court.
+            </p>
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              {(
+                [
+                  { id: 'low', label: 'Low', desc: 'Manual Precision' },
+                  { id: 'medium', label: 'Medium', desc: 'Balanced Guide' },
+                  { id: 'high', label: 'High', desc: 'Full Safe Lock' },
+                ] as const
+              ).map((lvl) => (
+                <button
+                  key={lvl.id}
+                  onClick={() => {
+                    padelAudio.playClickPop();
+                    onSelectAimAssist?.(lvl.id);
+                  }}
+                  className={`py-2 px-2 rounded-xl border-3 border-slate-900 font-brand text-xs uppercase transition text-center ${
+                    aimAssist === lvl.id
+                      ? 'bg-indigo-500 text-white'
+                      : 'bg-white text-slate-700 hover:bg-slate-100'
+                  }`}
+                  style={{ boxShadow: aimAssist === lvl.id ? '3px 3px 0px #0f172a' : 'none' }}
+                >
+                  <div className="text-sm">{lvl.label}</div>
+                  <div className="text-[10px] font-bold opacity-80">{lvl.desc}</div>
                 </button>
               ))}
             </div>

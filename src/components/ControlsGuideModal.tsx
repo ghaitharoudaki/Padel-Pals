@@ -11,9 +11,9 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150 font-sans">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
       <div
-        className="w-full max-w-lg bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 relative text-slate-950 max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-lg bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 relative text-slate-950 max-h-[90vh] overflow-y-auto animate-in slide-in-from-right-8 duration-250 ease-out"
         style={{ boxShadow: '8px 8px 0px #0f172a' }}
       >
         <button
@@ -43,59 +43,78 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
 
         <div className="space-y-4">
-          {/* Smart Auto-Shot System */}
+          {/* Easy Directional Aiming (3x2 Grid) */}
           <div className="p-4 bg-amber-50 border-3 border-slate-900 rounded-2xl space-y-2">
             <div className="flex items-center gap-2 font-brand text-lg uppercase text-slate-950">
               <Sparkles className="w-5 h-5 text-amber-500 fill-current" />
-              <span>Smart Auto-Shots (No Key Spam!)</span>
+              <span>Easy Directional Aiming (3x2 Grid)</span>
             </div>
             <p className="text-xs font-bold text-slate-700 leading-relaxed">
-              The game automatically triggers the perfect shot based on ball height and your movement direction:
+              No tricky mouse aiming needed! Simply hold your movement keys or joystick in the direction you want the ball to go. Watch the yellow target reticle snap across the opponent&apos;s court:
             </p>
-            <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-rose-600 uppercase block">💥 Smash</span>
-                <span className="text-[11px] font-bold text-slate-600">Triggered automatically when ball is high</span>
+            <div className="grid grid-cols-3 gap-1.5 text-center text-xs pt-1 font-brand">
+              <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
+                <span className="text-indigo-600 block text-xs">W + A</span>
+                <span className="text-[10px] text-slate-600 font-sans font-bold">Short Left</span>
               </div>
-              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-indigo-600 uppercase block">🌈 Deep Lob</span>
-                <span className="text-[11px] font-bold text-slate-600">Hold W / Up arrow while swinging</span>
+              <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
+                <span className="text-indigo-600 block text-xs">W / Up</span>
+                <span className="text-[10px] text-slate-600 font-sans font-bold">Short Center</span>
               </div>
-              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-pink-600 uppercase block">🍃 Soft Drop</span>
-                <span className="text-[11px] font-bold text-slate-600">Hold S / Down arrow near the net</span>
+              <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
+                <span className="text-indigo-600 block text-xs">W + D</span>
+                <span className="text-[10px] text-slate-600 font-sans font-bold">Short Right</span>
               </div>
-              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-amber-600 uppercase block">🎯 Power Drive</span>
-                <span className="text-[11px] font-bold text-slate-600">Standard crisp penetrating baseline drive</span>
+              <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
+                <span className="text-emerald-600 block text-xs">A / Left</span>
+                <span className="text-[10px] text-slate-600 font-sans font-bold">Deep Left</span>
+              </div>
+              <div className="bg-amber-100 p-2 rounded-xl border-2 border-slate-900">
+                <span className="text-amber-700 block text-xs">None (Neutral)</span>
+                <span className="text-[10px] text-slate-700 font-sans font-bold">Deep Center (Default)</span>
+              </div>
+              <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
+                <span className="text-emerald-600 block text-xs">D / Right</span>
+                <span className="text-[10px] text-slate-600 font-sans font-bold">Deep Right</span>
               </div>
             </div>
           </div>
 
-          {/* Key Actions */}
+          {/* Shot Type Shortcuts */}
           <div className="p-4 bg-slate-50 border-3 border-slate-900 rounded-2xl space-y-2.5">
             <div className="flex items-center gap-2 font-brand text-lg uppercase text-slate-950">
               <Zap className="w-5 h-5 text-cyan-500 fill-current" />
-              <span>Key Bindings</span>
+              <span>Shot Types &amp; Shortcuts</span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-slate-950 block">SPACE / LEFT CLICK</span>
-                <span className="text-[11px] font-bold text-slate-600">Hold to charge power, release to swing</span>
+                <span className="font-brand text-sm text-slate-950 block">SPACE / CLICK</span>
+                <span className="text-[11px] font-bold text-slate-600">Hold to charge power, release to strike</span>
               </div>
               <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-slate-950 block">WASD / ARROWS</span>
-                <span className="text-[11px] font-bold text-slate-600">Move player & steer shot angle in real time</span>
+                <span className="font-brand text-sm text-indigo-600 block">SHIFT + HIT (LOB)</span>
+                <span className="text-[11px] font-bold text-slate-600">High arc defensive lob over opponents</span>
               </div>
               <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-slate-950 block">SHIFT KEY</span>
-                <span className="text-[11px] font-bold text-slate-600">Sprint for rapid court coverage</span>
+                <span className="font-brand text-sm text-pink-600 block">CTRL + HIT (DROP)</span>
+                <span className="text-[11px] font-bold text-slate-600">Soft drop shot that dies close to the net</span>
               </div>
               <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-slate-950 block">RIGHT CLICK</span>
-                <span className="text-[11px] font-bold text-slate-600">Instant smash or drive</span>
+                <span className="font-brand text-sm text-rose-600 block">SMASH (OVERHEAD)</span>
+                <span className="text-[11px] font-bold text-slate-600">Jump and hit when ball is above head height</span>
               </div>
             </div>
+          </div>
+
+          {/* Mobile & Touch Controls */}
+          <div className="p-4 bg-emerald-50 border-3 border-slate-900 rounded-2xl space-y-2">
+            <div className="flex items-center gap-2 font-brand text-lg uppercase text-slate-950">
+              <Gamepad2 className="w-5 h-5 text-emerald-600" />
+              <span>Mobile / Touch Controls</span>
+            </div>
+            <p className="text-xs font-bold text-slate-700 leading-relaxed">
+              On touch devices, use the floating on-screen joystick on the left to move and select your 3x2 aim zone. Tap or hold the chunky &quot;HIT&quot; button to charge your drive, or press &quot;LOB&quot; for an instant lob shot!
+            </p>
           </div>
 
           {/* Glass Wall Rules Tip */}
@@ -103,9 +122,9 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
             <ShieldAlert className="w-6 h-6 text-cyan-700 flex-shrink-0 mt-0.5" />
             <div className="text-xs font-bold text-slate-800 leading-relaxed">
               <span className="font-brand text-sm uppercase text-slate-950 block mb-0.5">
-                Padel Glass Wall Rule:
+                Smart Aim Assist &amp; Glass Wall Rule:
               </span>
-              The ball MUST bounce once on the court turf before contacting the rear glass wall. After it bounces off the glass, you can hit it on the rebound!
+              Aim Assist automatically adjusts elevation to clear the net and keeps normal shots within court boundaries. The ball must bounce once on the floor before hitting the glass wall!
             </div>
           </div>
 

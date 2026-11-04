@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import {
+  AimAssist,
   BallState,
   CameraPreset,
   COURT_CONFIG,
@@ -13,6 +14,7 @@ import {
   PlayerCustomization,
   PlayerState,
   ScoreState,
+  ScreenState,
   ShotType,
   Side,
   Vector3D,
@@ -56,6 +58,8 @@ import { CustomizerModal } from './components/CustomizerModal';
 import { ControlsGuideModal } from './components/ControlsGuideModal';
 import { MatchOverModal } from './components/MatchOverModal';
 import { MainMenu } from './components/MainMenu';
+import { CountdownOverlay } from './components/CountdownOverlay';
+import { PauseOverlay } from './components/PauseOverlay';
 import { ProfileModal } from './components/ProfileModal';
 import { SettingsModal } from './components/SettingsModal';
 import { FeedbackModal } from './components/FeedbackModal';
@@ -133,8 +137,8 @@ const DEFAULT_P4_CUSTOM: PlayerAppearance = {
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
 
-  // High-Level Game State
-  const [gameState, setGameState] = useState<'menu' | 'playing' | 'gameover'>('menu');
+  // Screen State Machine: BOOT -> MENU -> MODE_SELECT -> LOCKER -> SETTINGS -> HOW_TO_PLAY -> COUNTDOWN -> PLAYING -> PAUSED -> POINT_SCORED -> MATCH_END -> RESULTS
+  const [screenState, setScreenState] = useState<ScreenState>('MENU');
   const [gameMode, setGameMode] = useState<GameMode>('2v2');
   const [botDifficulty, setBotDifficulty] = useState<Difficulty>('medium');
   const [currentShot, setCurrentShot] = useState<ShotType>('flat');
@@ -142,6 +146,13 @@ export default function App() {
   const [hitFeedback, setHitFeedback] = useState<string | null>(null);
   const [matchLength, setMatchLength] = useState<MatchLength>('1_set');
   const [goldenPoint, setGoldenPoint] = useState<boolean>(false);
+  const [aimAssist, setAimAssist] = useState<AimAssist>(() => {
+    try {
+      return (localStorage.getItem('padel_aim_assist') as AimAssist) || 'high';
+    } catch {
+      return 'high';
+    }
+  });
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('broadcast');
   const [score, setScore] = useState<ScoreState>(() =>
     createInitialScoreState('south', '1_set', false)
@@ -150,6 +161,15 @@ export default function App() {
   const [pointBanner, setPointBanner] = useState<{ text: string; subtext: string; winner: Side } | null>(
     null
   );
+  const aimAssistRef = useRef<AimAssist>(aimAssist);
+  const inputManagerRef = useRef<InputManager | null>(null);
+
+  useEffect(() => {
+    aimAssistRef.current = aimAssist;
+    try {
+      localStorage.setItem('padel_aim_assist', aimAssist);
+    } catch {}
+  }, [aimAssist]);
 
   // Debug HUD (F3)
   const [showDebug, setShowDebug] = useState<boolean>(false);
@@ -158,16 +178,16 @@ export default function App() {
 
   // Modals
   const [showMultiplayer, setShowMultiplayer] = useState(false);
-  const [showCustomizer, setShowCustomizer] = useState(false);
-  const [showControls, setShowControls] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
-  const [isFreeplayActive, setIsFreeplayActive] = useState(false);
 
   // Customization
   const [p1Custom, setP1Custom] = useState<PlayerCustomization>(DEFAULT_P1_CUSTOM);
   const [p2Custom, setP2Custom] = useState<PlayerCustomization>(DEFAULT_P2_CUSTOM);
+
+  // Guard against double clicks on match start
+  const isStartingMatchRef = useRef<boolean>(false);
+  const [isMatchTransitioning, setIsMatchTransitioning] = useState<boolean>(false);
 
   // Multiplayer Netcode State
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
@@ -241,7 +261,7 @@ export default function App() {
   const currentShotRef = useRef<ShotType>(currentShot);
   const chargePowerRef = useRef<number>(chargePower);
   const gameModeRef = useRef<GameMode>(gameMode);
-  const gameStateRef = useRef<'menu' | 'playing' | 'gameover'>(gameState);
+  const screenStateRef = useRef<ScreenState>(screenState);
   const botDifficultyRef = useRef<Difficulty>(botDifficulty);
   const cameraPresetRef = useRef<CameraPreset>(cameraPreset);
   const cameraControllerRef = useRef<CameraController | null>(null);
@@ -253,8 +273,8 @@ export default function App() {
 
   // Sync refs
   useEffect(() => {
-    gameStateRef.current = gameState;
-  }, [gameState]);
+    screenStateRef.current = screenState;
+  }, [screenState]);
   useEffect(() => {
     scoreRef.current = score;
   }, [score]);
@@ -299,22 +319,25 @@ export default function App() {
     padelAudio.enabled = next;
   };
 
+  const isMenuScreen = (s: ScreenState): boolean =>
+    s === 'BOOT' || s === 'MENU' || s === 'MODE_SELECT' || s === 'LOCKER' || s === 'SETTINGS' || s === 'HOW_TO_PLAY';
+
   // URL autostart check (?autostart=1)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
-      setGameState('playing');
+      startMatchWithCountdown('2v2');
     }
   }, []);
 
   // Menu Music loop
   useEffect(() => {
-    if (gameState === 'menu' && audioEnabled) {
+    if (isMenuScreen(screenState) && audioEnabled) {
       padelAudio.startMenuMusic();
     } else {
       padelAudio.stopMenuMusic();
     }
-  }, [gameState, audioEnabled]);
+  }, [screenState, audioEnabled]);
 
   // Main Three.js Scene and 60Hz Fixed-Timestep Loop
   useEffect(() => {
@@ -432,6 +455,62 @@ export default function App() {
       sparkGeo.attributes.position.needsUpdate = true;
     };
 
+    // Ambient Floating Dust Motes in Golden Hour Beams (Phase C)
+    const dustCount = 80;
+    const dustGeo = new THREE.BufferGeometry();
+    const dustPositions = new Float32Array(dustCount * 3);
+    for (let i = 0; i < dustCount; i++) {
+      dustPositions[i * 3] = (Math.random() - 0.25) * 6.5;
+      dustPositions[i * 3 + 1] = 0.25 + Math.random() * 3.6;
+      dustPositions[i * 3 + 2] = 1.0 + Math.random() * 5.5;
+    }
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+    const dustMat = new THREE.PointsMaterial({
+      color: 0xffe8c8,
+      size: 0.045,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const dustPoints = new THREE.Points(dustGeo, dustMat);
+    scene.add(dustPoints);
+
+    // Drifting Festive Paper Confetti (Subtle tournament atmosphere)
+    const confettiCount = 28;
+    const confettiGeo = new THREE.PlaneGeometry(0.06, 0.04);
+    const confettiMat = new THREE.MeshBasicMaterial({
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+    });
+    const confettiMesh = new THREE.InstancedMesh(confettiGeo, confettiMat, confettiCount);
+    const confettiColors = [
+      new THREE.Color(0xfbbf24), // gold
+      new THREE.Color(0x38bdf8), // sky blue
+      new THREE.Color(0xf43f5e), // rose
+      new THREE.Color(0x34d399), // emerald
+      new THREE.Color(0xa78bfa), // purple
+    ];
+    const confettiData = Array.from({ length: confettiCount }, (_, i) => {
+      confettiMesh.setColorAt(i, confettiColors[i % confettiColors.length]);
+      return {
+        x: (Math.random() - 0.35) * 6.0,
+        y: 0.6 + Math.random() * 3.4,
+        z: 1.5 + Math.random() * 5.0,
+        vx: (Math.random() - 0.5) * 0.12,
+        vy: -0.10 - Math.random() * 0.15,
+        rotX: Math.random() * Math.PI,
+        rotY: Math.random() * Math.PI,
+        rotZ: Math.random() * Math.PI,
+        vRotX: (Math.random() - 0.5) * 2.2,
+        vRotY: (Math.random() - 0.5) * 2.6,
+      };
+    });
+    if (confettiMesh.instanceColor) confettiMesh.instanceColor.needsUpdate = true;
+    scene.add(confettiMesh);
+
     // 4 Player Avatars
     const p1Avatar: AvatarController = buildPadelAvatar(p1Ref.current.customization, 'south', 7.2, p1Ref.current.customization.number || 5, 'blue');
     const p2Avatar: AvatarController = buildPadelAvatar(p2Ref.current.customization, 'north', -7.2, p2Ref.current.customization.number || 5, 'red');
@@ -519,15 +598,21 @@ export default function App() {
 
       if (result.matchWon) {
         padelAudio.playVictoryCheer();
-        setGameState('gameover');
+        setScreenState('MATCH_END');
+        screenStateRef.current = 'MATCH_END';
+      } else {
+        setScreenState('POINT_SCORED');
+        screenStateRef.current = 'POINT_SCORED';
       }
 
-      multiplayerClientRef.current?.sendPointScored(winner, result.nextState);
+      multiplayerClientRef.current?.broadcastPointScored(winner, result.nextState);
 
       pointResetTimerRef.current = window.setTimeout(() => {
         pointResetTimerRef.current = null;
         isFrozenRef.current = false;
         setPointBanner(null);
+        setScreenState('PLAYING');
+        screenStateRef.current = 'PLAYING';
 
         const nextServing = result.nextState.servingSide;
         p1Ref.current.isServing = nextServing === 'south';
@@ -617,15 +702,17 @@ export default function App() {
         }
 
         const effectivePower = Math.min(1.0, intent.power * timing.powerMultiplier);
+        const aimTarget = intent.targetAim || mouseAimRef.current;
         const struck = strikeBallWithRacket(
           b,
           'south',
           selectedShot,
           effectivePower,
-          mouseAimRef.current,
+          aimTarget,
           p1.position,
           intent.bias,
-          timing.quality
+          timing.quality,
+          aimAssistRef.current
         );
         ballRef.current = struck;
         currentShotRef.current = selectedShot;
@@ -706,7 +793,7 @@ export default function App() {
       },
       onAimChange: (aim) => {
         mouseAimRef.current = aim;
-        courtVisuals.updateAim(aim.x, aim.z, gameStateRef.current === 'playing');
+        courtVisuals.updateAim(aim.x, aim.z, screenStateRef.current === 'PLAYING');
       },
       onToggleDebug: () => {
         setShowDebug((prev) => !prev);
@@ -718,6 +805,7 @@ export default function App() {
         }
       },
     });
+    inputManagerRef.current = inputManager;
 
     const handleResize = () => {
       if (!mountRef.current) return;
@@ -729,7 +817,7 @@ export default function App() {
     window.addEventListener('resize', handleResize);
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (gameStateRef.current !== 'menu') return;
+      if (!isMenuScreen(screenStateRef.current)) return;
       const normX = (e.clientX / window.innerWidth) * 2 - 1;
       const normY = -(e.clientY / window.innerHeight) * 2 + 1;
       cameraController.setMouseParallax(normX, normY);
@@ -761,6 +849,11 @@ export default function App() {
       {
         fixedUpdate: (fixedDt) => {
           const now = performance.now();
+
+          // Only simulate match physics, AI, and audio when in PLAYING or POINT_SCORED states
+          if (screenStateRef.current !== 'PLAYING' && screenStateRef.current !== 'POINT_SCORED') {
+            return;
+          }
 
           // Hit-stop freeze frame check (40-70 ms)
           if (now < hitStopUntilRef.current) {
@@ -1078,9 +1171,15 @@ export default function App() {
                   onPointFinished(winner, 'Double fault! Point to receiver');
                 }
               } else {
-                // Rally fault: point to opponent of the last hitter
-                const winner: Side = ballRef.current.lastHitter === 'south' ? 'north' : 'south';
-                onPointFinished(winner, phys.events.faultReason || 'Point concluded');
+                // Rally fault: awarded deterministically to faultWinner
+                const winner: Side =
+                  phys.events.faultWinner ||
+                  (ballRef.current.lastHitter === 'south' ? 'north' : 'south');
+                const reason =
+                  phys.events.shortReason ||
+                  phys.events.faultReason ||
+                  'Point concluded';
+                onPointFinished(winner, reason);
               }
             }
           }
@@ -1100,12 +1199,19 @@ export default function App() {
 
         render: (alpha, dt) => {
           const now = performance.now();
-          const isMenu = gameStateRef.current === 'menu';
+          const currentScreen = screenStateRef.current;
+          const isMenu = isMenuScreen(currentScreen);
           const isDoubles = gameModeRef.current !== '1v1';
           const p1 = p1Ref.current;
           const p2 = p2Ref.current;
           const p3 = p3Ref.current;
           const p4 = p4Ref.current;
+
+          // Only accept inputs during active match play
+          inputManager.setEnabled(currentScreen === 'PLAYING');
+
+          // Back wall occlusion fix: hide South baseline frame during match play
+          courtVisuals.setNearWallVisible(isMenu);
 
           inputManager.update(now);
 
@@ -1168,35 +1274,76 @@ export default function App() {
             arenaFill.color.set(0x38bdf8);
           }
 
+          dustPoints.visible = isMenu;
+          confettiMesh.visible = isMenu;
+
           if (isMenu) {
+            // 1. Ambient dust particles slow upward float
+            const dPos = dustGeo.attributes.position.array as Float32Array;
+            for (let i = 0; i < dustCount; i++) {
+              dPos[i * 3 + 1] += dt * 0.16;
+              dPos[i * 3] += Math.sin((now / 1000) * 0.7 + i) * dt * 0.05;
+              if (dPos[i * 3 + 1] > 4.2) {
+                dPos[i * 3 + 1] = 0.25;
+              }
+            }
+            dustGeo.attributes.position.needsUpdate = true;
+
+            // 2. Ambient drifting confetti ribbons
+            const dummyMat4 = new THREE.Matrix4();
+            const dummyPos = new THREE.Vector3();
+            const dummyEuler = new THREE.Euler();
+            const dummyQuat = new THREE.Quaternion();
+            const dummyScale = new THREE.Vector3(1, 1, 1);
+            for (let i = 0; i < confettiCount; i++) {
+              const c = confettiData[i];
+              c.y += c.vy * dt;
+              c.x += c.vx * dt + Math.sin((now / 1000) * 1.1 + i) * dt * 0.08;
+              c.rotX += c.vRotX * dt;
+              c.rotY += c.vRotY * dt;
+              if (c.y < 0.15) {
+                c.y = 3.6;
+                c.x = (Math.random() - 0.35) * 6.0;
+              }
+              dummyPos.set(c.x, c.y, c.z);
+              dummyEuler.set(c.rotX, c.rotY, c.rotZ);
+              dummyQuat.setFromEuler(dummyEuler);
+              dummyMat4.compose(dummyPos, dummyQuat, dummyScale);
+              confettiMesh.setMatrixAt(i, dummyMat4);
+            }
+            confettiMesh.instanceMatrix.needsUpdate = true;
+
             p1Avatar.setVisible(true);
             p2Avatar.setVisible(false);
             p3Avatar.setVisible(false);
             p4Avatar.setVisible(false);
 
-            p1.position.x = 1.5;
+            // Framed character at (1.35, 0, 4.0): sits at ~59% screen width, perfectly clear of left menu
+            p1.position.x = 1.35;
             p1.position.y = 0;
             p1.position.z = 4.0;
-            p1Avatar.group.position.set(1.5, 0, 4.0);
+            p1Avatar.group.position.set(1.35, 0, 4.0);
 
-            // Rhythmic padel racket ball-bounce loop in foreground
-            const bounceSpeed = 4.2;
-            const bouncePhase = Math.abs(Math.sin((now / 1000) * bounceSpeed));
-            const ballBounceY = 0.88 + Math.pow(bouncePhase, 0.78) * 0.72;
-            ballMesh.position.set(1.9, ballBounceY, 4.05);
+            // Eased parabolic ball bounce loop synchronized with character knees
+            const bouncePeriod = 0.76;
+            const bounceCycle = ((now / 1000) % bouncePeriod) / bouncePeriod; // 0..1
+            // 4 * u * (1 - u): 0 at racket contact, 1 at peak apex
+            const bounceArc = 4.0 * bounceCycle * (1.0 - bounceCycle);
+            const racketFaceY = 0.94;
+            const apexHeight = 0.44;
+            const ballBounceY = racketFaceY + bounceArc * apexHeight;
+            // Racket face center is at X=1.71, Z=4.15
+            ballMesh.position.set(1.71, ballBounceY, 4.15);
 
-            p1Avatar.updateKinematics(dt, { x: 0, z: 0 }, bouncePhase < 0.18 ? 0.35 : 0, false, 'flat', -0.15);
+            // Procedural relaxed idle: side racket, knee cushion, head following mouse, blinking
+            p1Avatar.updateMenuIdle(dt, now / 1000, bounceCycle, cameraController.mouseParallax);
             courtVisuals.updateAim(0, 0, false);
             courtVisuals.updateLandingPrediction(0, 0, 0, false);
           } else {
-            p1Avatar.setVisible(true);
-            p2Avatar.setVisible(true);
-            p3Avatar.setVisible(isDoubles);
-            p4Avatar.setVisible(isDoubles);
-
             players.forEach((player) => {
               const avatar = avatars[player.id];
-              avatar.group.visible = player.id === 'p1' || isDoubles;
+              const isVisible = player.id === 'p1' || player.id === 'p2' || isDoubles;
+              avatar.setVisible(isVisible);
               const renderedPosition = interpolatePosition(previousPositions[player.id], player.position, alpha);
               avatar.group.position.set(renderedPosition.x, renderedPosition.y, renderedPosition.z);
             });
@@ -1316,7 +1463,13 @@ export default function App() {
     return () => {
       gameLoop.stop();
       crowdSystem.dispose();
+      dustGeo.dispose();
+      dustMat.dispose();
+      confettiGeo.dispose();
+      confettiMat.dispose();
+      multiplayerClientRef.current?.disconnect();
       inputManager.dispose();
+      inputManagerRef.current = null;
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousemove', handleMouseMove);
       renderer.dispose();
@@ -1375,7 +1528,7 @@ export default function App() {
         onMatchStarted: () => {
           setShowMultiplayer(false);
           handleModeChange('online');
-          restartMatch();
+          startMatchWithCountdown('online');
         },
         onSnapshotReceived: (snapshot) => {
           if (multiplayerClientRef.current?.isHost) return;
@@ -1472,7 +1625,7 @@ export default function App() {
         },
         onHostDisconnected: () => {
           triggerHitFeedback('HOST LEFT - RETURNING TO LOBBY');
-          setGameState('menu');
+          setScreenState('MENU');
           setShowMultiplayer(true);
           setConnectionStatus('disconnected');
           setNetErrorMessage('The host left the match.');
@@ -1545,25 +1698,106 @@ export default function App() {
     }
   };
 
-  const restartMatch = () => {
-    const initScore = createInitialScoreState('south', matchLength, goldenPoint);
+  // Start match flow with clean countdown transition and double-click guard
+  const startMatchWithCountdown = (mode: GameMode, diff?: Difficulty, len?: MatchLength) => {
+    if (isStartingMatchRef.current) return;
+    isStartingMatchRef.current = true;
+
+    if (diff) {
+      setBotDifficulty(diff);
+      botDifficultyRef.current = diff;
+    }
+    if (len) {
+      setMatchLength(len);
+    }
+    handleModeChange(mode);
+
+    const targetLength = len || matchLength;
+    const initScore = createInitialScoreState('south', targetLength, goldenPoint);
     setScore(initScore);
     scoreRef.current = initScore;
-    const isD = gameMode !== '1v1';
+
+    const isD = mode !== '1v1';
     setPlayerPosition(p1Ref.current, { x: isD ? -2.0 : 0, y: 0, z: 7.2 });
     p1Ref.current.isServing = true;
+    p1Ref.current.velocity = { x: 0, y: 0, z: 0 };
     setPlayerPosition(p3Ref.current, { x: 2.0, y: 0, z: 7.2 });
+    p3Ref.current.velocity = { x: 0, y: 0, z: 0 };
     setPlayerPosition(p2Ref.current, { x: isD ? -2.0 : 0, y: 0, z: -7.2 });
     p2Ref.current.isServing = false;
+    p2Ref.current.velocity = { x: 0, y: 0, z: 0 };
     setPlayerPosition(p4Ref.current, { x: 2.0, y: 0, z: -7.2 });
-    ballRef.current = createInitialBall('south');
-    setGameState('playing');
+    p4Ref.current.velocity = { x: 0, y: 0, z: 0 };
+
+    ballRef.current = createInitialBall('south', p1Ref.current.position);
+    isFrozenRef.current = false;
+    setPointBanner(null);
+
+    // Stop menu music
+    padelAudio.stopMenuMusic();
+
+    if (isMenuScreen(screenStateRef.current)) {
+      // Smooth camera push-in towards court, fade into countdown (Phase C)
+      setIsMatchTransitioning(true);
+      cameraControllerRef.current?.startPlayPushIn(() => {
+        cameraControllerRef.current?.snapToMatchPreset();
+        setScreenState('COUNTDOWN');
+        setIsMatchTransitioning(false);
+        isStartingMatchRef.current = false;
+      });
+    } else {
+      cameraControllerRef.current?.snapToMatchPreset();
+      setScreenState('COUNTDOWN');
+      isStartingMatchRef.current = false;
+    }
   };
+
+  const handleCountdownComplete = () => {
+    isStartingMatchRef.current = false;
+    setScreenState('PLAYING');
+    padelAudio.playRefereeWhistle('start');
+  };
+
+  const quitToMenu = () => {
+    isStartingMatchRef.current = false;
+    setIsMatchTransitioning(false);
+    if (pointResetTimerRef.current) {
+      clearTimeout(pointResetTimerRef.current);
+      pointResetTimerRef.current = null;
+    }
+    isFrozenRef.current = false;
+    setPointBanner(null);
+    padelAudio.stopAllCrowdAudio();
+    cameraControllerRef.current?.snapToMenuOrbit();
+    setScreenState('MENU');
+  };
+
+  // Keyboard shortcut: ESC toggles pause during match play
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (screenStateRef.current === 'PLAYING') {
+          setScreenState('PAUSED');
+        } else if (screenStateRef.current === 'PAUSED') {
+          setScreenState('PLAYING');
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-zinc-950 font-sans select-none text-white">
       {/* 3D WebGL Canvas Mount */}
       <div ref={mountRef} className="absolute inset-0 z-0 cursor-crosshair" />
+
+      {/* Smooth Match Transition Push-In Fade (Phase C) */}
+      <div
+        className={`fixed inset-0 z-40 bg-slate-950 pointer-events-none transition-opacity duration-300 ${
+          isMatchTransitioning ? 'opacity-90' : 'opacity-0'
+        }`}
+      />
 
       {/* Real-Time F3 Debug Overlay */}
       <DebugOverlay
@@ -1578,66 +1812,139 @@ export default function App() {
         fps={fps}
       />
 
-      {/* Main Menu */}
-      {gameState === 'menu' && (
+      {/* 1. Main Menu & Mode Select */}
+      {(screenState === 'MENU' || screenState === 'MODE_SELECT') && (
         <MainMenu
+          screenState={screenState}
+          onOpenModeSelect={() => setScreenState('MODE_SELECT')}
+          onBackToMainMenu={() => setScreenState('MENU')}
           onStartMatch={(mode, diff, len) => {
-            if (diff) {
-              setBotDifficulty(diff);
-              botDifficultyRef.current = diff;
-            }
-            if (len) {
-              setMatchLength(len);
-            }
-            handleModeChange(mode);
-            restartMatch();
+            startMatchWithCountdown(mode, diff, len);
           }}
           onStartPractice={() => {
-            handleModeChange('2v2');
-            restartMatch();
+            startMatchWithCountdown('1v1', 'easy', '1_game');
           }}
           onOpenOnline={() => setShowMultiplayer(true)}
-          onOpenLocker={() => setShowCustomizer(true)}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenControls={() => setShowControls(true)}
+          onOpenLocker={() => setScreenState('LOCKER')}
+          onOpenSettings={() => setScreenState('SETTINGS')}
+          onOpenControls={() => setScreenState('HOW_TO_PLAY')}
           p1Custom={p1Custom}
           audioEnabled={audioEnabled}
           onToggleAudio={toggleSound}
         />
       )}
 
-      {/* Active Game HUD */}
-      {gameState === 'playing' && (
+      {/* 2. Locker / Customizer */}
+      {screenState === 'LOCKER' && (
+        <CustomizerModal
+          isOpen={true}
+          onClose={() => setScreenState('MENU')}
+          appearance={p1Custom}
+          onChange={(next) => {
+            setP1Custom(next);
+            p1Ref.current.customization = next;
+            p1Ref.current.name = next.name;
+            avatarsRef.current.p1?.applyAppearance(next);
+          }}
+        />
+      )}
+
+      {/* 3. Settings */}
+      {screenState === 'SETTINGS' && (
+        <SettingsModal
+          isOpen={true}
+          onClose={() => setScreenState('MENU')}
+          audioEnabled={audioEnabled}
+          onToggleAudio={toggleSound}
+          cameraPreset={cameraPreset}
+          onSelectCameraPreset={setCameraPreset}
+          matchLength={matchLength}
+          onSelectMatchLength={(len) => {
+            setMatchLength(len);
+            setScore((prev) => ({
+              ...prev,
+              matchLength: len,
+              targetGames: len === '1_game' ? 1 : len === '3_games' ? 3 : 6,
+            }));
+          }}
+          goldenPoint={goldenPoint}
+          onToggleGoldenPoint={() => {
+            setGoldenPoint((prev) => {
+              const next = !prev;
+              setScore((s) => ({ ...s, goldenPoint: next }));
+              return next;
+            });
+          }}
+          aimAssist={aimAssist}
+          onSelectAimAssist={setAimAssist}
+        />
+      )}
+
+      {/* 4. Controls & How to Play */}
+      {screenState === 'HOW_TO_PLAY' && (
+        <ControlsGuideModal
+          isOpen={true}
+          onClose={() => setScreenState('MENU')}
+        />
+      )}
+
+      {/* 5. Match Start 3-2-1 Countdown */}
+      {screenState === 'COUNTDOWN' && (
+        <CountdownOverlay
+          onComplete={handleCountdownComplete}
+          p1Name={p1Custom.name}
+          p2Name={gameMode === 'online' ? p2Custom.name : 'Alejandro'}
+          gameMode={gameMode}
+        />
+      )}
+
+      {/* 6. Active Game Match HUD */}
+      {(screenState === 'PLAYING' || screenState === 'POINT_SCORED') && (
         <GameHUD
           score={score}
           gameMode={gameMode}
           onChangeMode={handleModeChange}
-          onExitToMenu={() => setGameState('menu')}
+          onExitToMenu={quitToMenu}
           currentShot={currentShot}
           onSelectShot={setCurrentShot}
           chargePower={chargePower}
           hitFeedback={hitFeedback}
           pointBanner={pointBanner}
           onOpenMultiplayer={() => setShowMultiplayer(true)}
-          onOpenCustomizer={() => setShowCustomizer(true)}
-          onOpenControls={() => setShowControls(true)}
-          onRestartMatch={restartMatch}
+          onOpenCustomizer={() => setScreenState('LOCKER')}
+          onOpenControls={() => setScreenState('HOW_TO_PLAY')}
+          onRestartMatch={() => startMatchWithCountdown(gameMode, botDifficulty, matchLength)}
           p1Name={p1Custom.name}
           p2Name={gameMode === 'online' ? p2Custom.name : 'Alejandro'}
           pingMs={pingMs}
           connectionStatus={connectionStatus}
+          onTouchJoystick={(x, z) => inputManagerRef.current?.setVirtualStick(x, z)}
+          onTouchHitStart={() => inputManagerRef.current?.startTouchCharge()}
+          onTouchHitEnd={() => inputManagerRef.current?.releaseTouchCharge()}
+          onTouchLob={() => inputManagerRef.current?.triggerTouchLob()}
         />
       )}
 
-      {/* Match Over Modal */}
-      <MatchOverModal
-        isOpen={gameState === 'gameover'}
-        score={score}
-        p1Name={p1Custom.name}
-        p2Name={gameMode === 'online' ? p2Custom.name : 'Alejandro'}
-        onRematch={restartMatch}
-        onOpenCustomizer={() => setShowCustomizer(true)}
-      />
+      {/* 7. Pause Overlay */}
+      {screenState === 'PAUSED' && (
+        <PauseOverlay
+          onResume={() => setScreenState('PLAYING')}
+          onRestart={() => startMatchWithCountdown(gameMode, botDifficulty, matchLength)}
+          onQuitToMenu={quitToMenu}
+        />
+      )}
+
+      {/* 8. Match Over / Results Modal */}
+      {(screenState === 'MATCH_END' || screenState === 'RESULTS') && (
+        <MatchOverModal
+          isOpen={true}
+          score={score}
+          p1Name={p1Custom.name}
+          p2Name={gameMode === 'online' ? p2Custom.name : 'Alejandro'}
+          onRematch={() => startMatchWithCountdown(gameMode, botDifficulty, matchLength)}
+          onOpenCustomizer={() => setScreenState('LOCKER')}
+        />
+      )}
 
       {/* Online Multiplayer Lobby Modal */}
       <MultiplayerLobbyModal
@@ -1664,53 +1971,11 @@ export default function App() {
         onToggleSimulatedLatency={handleToggleSimulatedLatency}
       />
 
-      {/* Avatar & Racket Customizer Locker Modal */}
-      <CustomizerModal
-        isOpen={showCustomizer}
-        onClose={() => setShowCustomizer(false)}
-        appearance={p1Custom}
-        onChange={(next) => {
-          setP1Custom(next);
-          p1Ref.current.customization = next;
-          p1Ref.current.name = next.name;
-          avatarsRef.current.p1?.applyAppearance(next);
-        }}
-      />
-
-      {/* Controls & Rules Guide Modal */}
-      <ControlsGuideModal
-        isOpen={showControls}
-        onClose={() => setShowControls(false)}
-      />
-
       {/* Career Profile Modal */}
       <ProfileModal
         isOpen={showProfile}
         onClose={() => setShowProfile(false)}
         customization={p1Custom}
-      />
-
-      {/* System Settings Modal */}
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        audioEnabled={audioEnabled}
-        onToggleAudio={toggleSound}
-        cameraPreset={cameraPreset}
-        onSelectCameraPreset={setCameraPreset}
-        matchLength={matchLength}
-        onSelectMatchLength={(len) => {
-          setMatchLength(len);
-          setScore((prev) => ({ ...prev, matchLength: len, targetGames: len === '1_game' ? 1 : len === '3_games' ? 3 : 6 }));
-        }}
-        goldenPoint={goldenPoint}
-        onToggleGoldenPoint={() => {
-          setGoldenPoint((prev) => {
-            const next = !prev;
-            setScore((s) => ({ ...s, goldenPoint: next }));
-            return next;
-          });
-        }}
       />
 
       {/* Feedback & Bug Reports Modal */}

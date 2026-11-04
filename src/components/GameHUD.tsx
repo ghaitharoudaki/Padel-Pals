@@ -28,6 +28,10 @@ interface Props {
   p2Name: string;
   pingMs?: number;
   connectionStatus?: string;
+  onTouchJoystick?: (x: number, z: number) => void;
+  onTouchHitStart?: () => void;
+  onTouchHitEnd?: () => void;
+  onTouchLob?: () => void;
 }
 
 const SHOT_INFO: Record<ShotType, { label: string; icon: string; bg: string }> = {
@@ -54,8 +58,51 @@ export const GameHUD: React.FC<Props> = ({
   p2Name,
   pingMs,
   connectionStatus,
+  onTouchJoystick,
+  onTouchHitStart,
+  onTouchHitEnd,
+  onTouchLob,
 }) => {
   const shot = SHOT_INFO[currentShot] || SHOT_INFO.flat;
+  const [stickActive, setStickActive] = React.useState(false);
+  const [stickOffset, setStickOffset] = React.useState({ x: 0, y: 0 });
+  const stickBaseRef = React.useRef<HTMLDivElement>(null);
+
+  const handlePointerDownStick = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setStickActive(true);
+    handleStickMove(e);
+  };
+
+  const handleStickMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!stickBaseRef.current) return;
+    const rect = stickBaseRef.current.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const rawDx = e.clientX - centerX;
+    const rawDy = e.clientY - centerY;
+    const maxRadius = 42;
+    const dist = Math.hypot(rawDx, rawDy);
+    const clampedDist = Math.min(dist, maxRadius);
+    const angle = Math.atan2(rawDy, rawDx);
+    const offsetX = Math.cos(angle) * clampedDist;
+    const offsetY = Math.sin(angle) * clampedDist;
+
+    setStickOffset({ x: offsetX, y: offsetY });
+    const normX = offsetX / maxRadius;
+    const normZ = offsetY / maxRadius;
+    onTouchJoystick?.(normX, normZ);
+  };
+
+  const handlePointerUpStick = (e: React.PointerEvent<HTMLDivElement>) => {
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+    setStickActive(false);
+    setStickOffset({ x: 0, y: 0 });
+    onTouchJoystick?.(0, 0);
+  };
 
   const handleSoundToggle = () => {
     padelAudio.enabled = !padelAudio.enabled;
@@ -236,8 +283,9 @@ export const GameHUD: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* 2. BOTTOM-LEFT CORNER: COMPACT SHOT TYPE & CHARGE POWER */}
-      <div className="fixed bottom-4 left-4 pointer-events-auto">
+      {/* 2. BOTTOM-LEFT: JOYSTICK & SHOT/POWER DISPLAY */}
+      <div className="fixed bottom-4 left-4 pointer-events-auto flex flex-col gap-3 items-start">
+        {/* Compact Active Shot Badge & Power Gauge */}
         <div
           className="bg-white border-4 border-slate-900 rounded-2xl p-2.5 flex flex-col gap-2 text-slate-950 min-w-[170px]"
           style={{ boxShadow: '4px 4px 0px #0f172a' }}
@@ -262,23 +310,100 @@ export const GameHUD: React.FC<Props> = ({
             </span>
           </div>
         </div>
+
+        {/* Virtual Joystick (Visible on mobile/touch, supports drag & auto-aim zone steering) */}
+        <div
+          ref={stickBaseRef}
+          onPointerDown={handlePointerDownStick}
+          onPointerMove={stickActive ? handleStickMove : undefined}
+          onPointerUp={handlePointerUpStick}
+          onPointerCancel={handlePointerUpStick}
+          className="w-24 h-24 rounded-full bg-slate-900/60 backdrop-blur-sm border-4 border-slate-900 relative flex items-center justify-center touch-none select-none cursor-pointer sm:hidden"
+          style={{ boxShadow: '3px 3px 0px #0f172a' }}
+          title="Virtual Joystick (Move & 3x2 Aim)"
+        >
+          {/* Directional ticks on the joystick base */}
+          <div className="absolute top-1 text-[9px] font-brand text-slate-300">W</div>
+          <div className="absolute bottom-1 text-[9px] font-brand text-slate-300">S</div>
+          <div className="absolute left-1.5 text-[9px] font-brand text-slate-300">A</div>
+          <div className="absolute right-1.5 text-[9px] font-brand text-slate-300">D</div>
+
+          {/* Thumb Knob */}
+          <div
+            className={`w-11 h-11 rounded-full border-3 border-slate-900 flex items-center justify-center transition-transform duration-75 shadow-lg ${
+              stickActive ? 'bg-amber-400 scale-105' : 'bg-white'
+            }`}
+            style={{
+              transform: `translate(${stickOffset.x}px, ${stickOffset.y}px)`,
+            }}
+          >
+            <div className="w-3.5 h-3.5 rounded-full bg-slate-900/30" />
+          </div>
+        </div>
       </div>
 
-      {/* 3. BOTTOM-RIGHT CORNER: MINIMAL KEY BINDINGS HINT */}
-      <div className="fixed bottom-4 right-4 pointer-events-none hidden sm:block">
-        <div
-          className="bg-white border-3 border-slate-900 rounded-xl py-1.5 px-3 text-slate-950 font-bold text-xs uppercase flex items-center gap-2"
-          style={{ boxShadow: '3px 3px 0px #0f172a' }}
-        >
-          <span className="bg-slate-900 text-amber-400 px-1.5 py-0.5 rounded font-mono text-[10px]">
-            SPACE / CLICK
-          </span>
-          <span>Swing</span>
-          <span className="text-slate-400">•</span>
-          <span className="bg-slate-900 text-cyan-400 px-1.5 py-0.5 rounded font-mono text-[10px]">
-            WASD
-          </span>
-          <span>Move & Aim</span>
+      {/* 3. BOTTOM-RIGHT: TOUCH ACTION BUTTONS & DESKTOP KEY HINTS */}
+      <div className="fixed bottom-4 right-4 pointer-events-auto flex flex-col items-end gap-3">
+        {/* On-screen Touch Action Buttons (HIT and LOB) */}
+        <div className="flex items-end gap-2.5 sm:hidden">
+          {/* LOB Button */}
+          <button
+            onPointerDown={(e) => {
+              e.preventDefault();
+              onTouchLob?.();
+            }}
+            className="w-14 h-14 rounded-2xl bg-indigo-500 active:bg-indigo-600 text-white border-4 border-slate-900 font-brand text-sm uppercase flex flex-col items-center justify-center leading-none transition active:scale-90"
+            style={{ boxShadow: '3px 3px 0px #0f172a' }}
+            title="Lob Shot"
+          >
+            <span className="text-base">🌈</span>
+            <span>LOB</span>
+          </button>
+
+          {/* HIT Button (Hold to charge power, release to strike) */}
+          <button
+            onPointerDown={(e) => {
+              e.preventDefault();
+              onTouchHitStart?.();
+            }}
+            onPointerUp={(e) => {
+              e.preventDefault();
+              onTouchHitEnd?.();
+            }}
+            onPointerCancel={(e) => {
+              e.preventDefault();
+              onTouchHitEnd?.();
+            }}
+            className="w-20 h-20 rounded-2xl bg-amber-400 active:bg-amber-500 text-slate-950 border-4 border-slate-900 font-brand text-xl uppercase flex flex-col items-center justify-center leading-none transition active:scale-95"
+            style={{ boxShadow: '4px 4px 0px #0f172a' }}
+            title="Hit / Hold to Charge"
+          >
+            <span className="text-2xl">🎾</span>
+            <span className="mt-0.5 tracking-wider">HIT</span>
+          </button>
+        </div>
+
+        {/* Desktop Key Bindings Hint */}
+        <div className="pointer-events-none hidden sm:block">
+          <div
+            className="bg-white border-3 border-slate-900 rounded-xl py-1.5 px-3 text-slate-950 font-bold text-xs uppercase flex items-center gap-2"
+            style={{ boxShadow: '3px 3px 0px #0f172a' }}
+          >
+            <span className="bg-slate-900 text-amber-400 px-1.5 py-0.5 rounded font-mono text-[10px]">
+              SPACE / CLICK
+            </span>
+            <span>Hit</span>
+            <span className="text-slate-400">•</span>
+            <span className="bg-slate-900 text-indigo-400 px-1.5 py-0.5 rounded font-mono text-[10px]">
+              SHIFT
+            </span>
+            <span>Lob</span>
+            <span className="text-slate-400">•</span>
+            <span className="bg-slate-900 text-cyan-400 px-1.5 py-0.5 rounded font-mono text-[10px]">
+              WASD
+            </span>
+            <span>Move &amp; 3x2 Aim</span>
+          </div>
         </div>
       </div>
     </div>

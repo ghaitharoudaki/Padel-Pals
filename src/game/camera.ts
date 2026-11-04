@@ -6,14 +6,18 @@ export class CameraController {
   public preset: CameraPreset = 'broadcast';
   private shakeIntensity: number = 0;
   private shakeDecay: number = 0;
-  private menuOrbitAngle: number = 0.2;
+  private menuOrbitAngle: number = 0.1;
   public mouseParallax: { x: number; y: number } = { x: 0, y: 0 };
+  private isPushingIn: boolean = false;
+  private pushInProgress: number = 0;
+  private pushInDuration: number = 0.45;
+  private pushInCallback: (() => void) | null = null;
 
   constructor(aspect: number) {
     // 54 FOV offers realistic broadcast depth and prevents fisheye warping
     this.camera = new THREE.PerspectiveCamera(54, aspect, 0.1, 150);
-    this.camera.position.set(0, 8.4, 15.6);
-    this.camera.lookAt(0, 1.0, -1.5);
+    this.camera.position.set(0.55, 1.65, 6.90);
+    this.camera.lookAt(0.85, 1.05, 4.0);
   }
 
   public setMouseParallax(x: number, y: number) {
@@ -23,6 +27,50 @@ export class CameraController {
 
   public setPreset(preset: CameraPreset) {
     this.preset = preset;
+  }
+
+  /**
+   * Start smooth camera push-in towards the court when pressing PLAY
+   */
+  public startPlayPushIn(onComplete?: () => void) {
+    this.isPushingIn = true;
+    this.pushInProgress = 0;
+    this.pushInCallback = onComplete || null;
+  }
+
+  public snapToMatchPreset() {
+    this.isPushingIn = false;
+    this.pushInProgress = 0;
+    this.pushInCallback = null;
+
+    let baseCamY = 8.4;
+    let baseCamZ = 15.6;
+    let targetLookY = 1.0;
+    let targetLookZ = -1.2;
+
+    if (this.preset === 'high') {
+      baseCamY = 12.2;
+      baseCamZ = 18.0;
+      targetLookY = 0.8;
+      targetLookZ = -1.5;
+    } else if (this.preset === 'close') {
+      baseCamY = 5.8;
+      baseCamZ = 13.0;
+      targetLookY = 1.2;
+      targetLookZ = -1.0;
+    }
+
+    this.camera.position.set(0, baseCamY, baseCamZ);
+    this.camera.lookAt(0, targetLookY, targetLookZ);
+  }
+
+  public snapToMenuOrbit() {
+    this.isPushingIn = false;
+    this.pushInProgress = 0;
+    this.pushInCallback = null;
+    this.menuOrbitAngle = 0.1;
+    this.camera.position.set(0.55, 1.65, 6.90);
+    this.camera.lookAt(0.85, 1.05, 4.0);
   }
 
   public updateAspect(width: number, height: number) {
@@ -49,16 +97,53 @@ export class CameraController {
     }
 
     if (isMenu) {
-      // Live 3D court at golden hour with slowly orbiting camera and mouse parallax
-      this.menuOrbitAngle += dt * 0.14;
-      const targetCamX = 1.4 + Math.sin(this.menuOrbitAngle) * 1.6 + this.mouseParallax.x * 0.7 + offsetX;
-      const targetCamY = 2.4 + Math.sin(this.menuOrbitAngle * 0.7) * 0.3 + this.mouseParallax.y * 0.4 + offsetY;
-      const targetCamZ = 4.2 + Math.cos(this.menuOrbitAngle) * 2.2;
+      if (this.isPushingIn) {
+        // Smooth camera push-in surge towards the court
+        this.pushInProgress += dt;
+        const progress = Math.min(1.0, this.pushInProgress / this.pushInDuration);
+        const ease = progress * progress * (3.0 - 2.0 * progress); // smoothstep
 
-      this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, targetCamX, 3.5, dt);
-      this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, targetCamY, 3.5, dt);
-      this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, targetCamZ, 3.5, dt);
-      this.camera.lookAt(1.5, 1.15, 4.0);
+        const startX = 0.55;
+        const startY = 1.65;
+        const startZ = 6.90;
+        const endX = 0.0;
+        const endY = 2.4;
+        const endZ = 3.6;
+
+        this.camera.position.x = THREE.MathUtils.lerp(startX, endX, ease);
+        this.camera.position.y = THREE.MathUtils.lerp(startY, endY, ease);
+        this.camera.position.z = THREE.MathUtils.lerp(startZ, endZ, ease);
+
+        const lookX = THREE.MathUtils.lerp(0.85, 0.0, ease);
+        const lookY = THREE.MathUtils.lerp(1.05, 1.1, ease);
+        const lookZ = THREE.MathUtils.lerp(4.0, 0.0, ease);
+        this.camera.lookAt(lookX, lookY, lookZ);
+
+        if (this.pushInProgress >= this.pushInDuration && this.pushInCallback) {
+          const cb = this.pushInCallback;
+          this.pushInCallback = null;
+          this.isPushingIn = false;
+          cb();
+        }
+      } else {
+        // Slow, soothing orbit/sway around the character and court at golden hour
+        this.menuOrbitAngle += dt * 0.055;
+        const swayX = Math.sin(this.menuOrbitAngle) * 0.35;
+        const swayY = Math.sin(this.menuOrbitAngle * 0.75) * 0.12;
+        const swayZ = Math.cos(this.menuOrbitAngle) * 0.28;
+
+        const parallaxX = this.mouseParallax.x * 0.22;
+        const parallaxY = this.mouseParallax.y * 0.16;
+
+        const targetCamX = 0.55 + swayX + parallaxX + offsetX;
+        const targetCamY = 1.65 + swayY + parallaxY + offsetY;
+        const targetCamZ = 6.90 + swayZ;
+
+        this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, targetCamX, 4.0, dt);
+        this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, targetCamY, 4.0, dt);
+        this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, targetCamZ, 4.0, dt);
+        this.camera.lookAt(0.85, 1.05, 4.0);
+      }
     } else {
       // Active match framing based on camera preset:
       // 'broadcast' = Elevated TV broadcast view behind baseline, smoothly following ball

@@ -28,6 +28,12 @@ export interface AvatarController {
     ballPos?: { x: number; y: number; z: number },
     swingSide?: SwingSide
   ) => void;
+  updateMenuIdle: (
+    dt: number,
+    timeSeconds: number,
+    ballBouncePhase: number,
+    mouseParallax: { x: number; y: number }
+  ) => void;
   triggerHitPop: () => void;
   triggerDustPuff: () => void;
   playStateAnimation: (state: 'celebrate' | 'sad' | 'idle' | 'ready') => void;
@@ -263,7 +269,8 @@ export function buildPadelRacket(
 function createFaceTexture(
   eyeType: EyeType,
   eyebrowType: EyebrowType,
-  mouthType: MouthType
+  mouthType: MouthType,
+  isBlinking = false
 ): THREE.CanvasTexture {
   if (typeof document === 'undefined') return createFallbackTexture();
   const canvas = document.createElement('canvas');
@@ -282,6 +289,18 @@ function createFaceTexture(
     ctx.save();
     ctx.translate(x, eyeY);
     if (isRight) ctx.scale(-1, 1);
+
+    if (isBlinking) {
+      // Cute natural curved closed anime eyelid
+      ctx.strokeStyle = '#09090b';
+      ctx.lineWidth = 14;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(0, 14, 36, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
 
     if (eyeType === 'half_lidded') {
       // Just Volleyball / Reference image signature half-lidded anime smirk eye
@@ -878,7 +897,8 @@ export function buildPadelAvatar(
   headGroup.add(createOutline(headGeo, 1.065));
 
   // Face Features Decal Plane (Expressive 2D anime eyes/eyebrows/mouth)
-  let faceTex = createFaceTexture(app.eyeType, app.eyebrowType, app.mouthType);
+  let faceTex = createFaceTexture(app.eyeType, app.eyebrowType, app.mouthType, false);
+  let faceTexBlink = createFaceTexture(app.eyeType, app.eyebrowType, app.mouthType, true);
   const faceDecalGeo = new THREE.PlaneGeometry(0.48, 0.48);
   const faceDecalMat = new THREE.MeshBasicMaterial({
     map: faceTex,
@@ -1099,7 +1119,9 @@ export function buildPadelAvatar(
 
     // Refresh Face Texture
     faceTex.dispose();
-    faceTex = createFaceTexture(app.eyeType, app.eyebrowType, app.mouthType);
+    faceTexBlink.dispose();
+    faceTex = createFaceTexture(app.eyeType, app.eyebrowType, app.mouthType, false);
+    faceTexBlink = createFaceTexture(app.eyeType, app.eyebrowType, app.mouthType, true);
     faceDecalMat.map = faceTex;
     faceDecalMat.needsUpdate = true;
 
@@ -1296,6 +1318,68 @@ export function buildPadelAvatar(
     }
   };
 
+  let blinkTimer = 2.4 + Math.random() * 2.0;
+  let isBlinking = false;
+
+  const updateMenuIdle = (
+    dt: number,
+    timeSeconds: number,
+    ballBouncePhase: number,
+    mouseParallax: { x: number; y: number }
+  ) => {
+    // 1. Natural Eased Blinking Cycle (Every 3-5 seconds for 120ms)
+    blinkTimer -= dt;
+    if (blinkTimer <= 0) {
+      if (!isBlinking) {
+        isBlinking = true;
+        faceDecalMat.map = faceTexBlink;
+        faceDecalMat.needsUpdate = true;
+      }
+      if (blinkTimer <= -0.12) {
+        isBlinking = false;
+        faceDecalMat.map = faceTex;
+        faceDecalMat.needsUpdate = true;
+        blinkTimer = 2.8 + Math.random() * 2.6;
+      }
+    }
+
+    // 2. Smooth head tilt and rotation tracking the mouse with spring easing
+    const targetHeadYaw = mouseParallax.x * 0.32;
+    const targetHeadPitch = -mouseParallax.y * 0.20;
+    const targetHeadRoll = -mouseParallax.x * 0.08;
+    headGroup.rotation.y = THREE.MathUtils.damp(headGroup.rotation.y, targetHeadYaw, 6.0, dt);
+    headGroup.rotation.x = THREE.MathUtils.damp(headGroup.rotation.x, targetHeadPitch, 6.0, dt);
+    headGroup.rotation.z = THREE.MathUtils.damp(headGroup.rotation.z, targetHeadRoll, 6.0, dt);
+
+    // 3. Relaxed athletic pose with racket held up at side
+    // ballBouncePhase is 0..1 in rhythm with the ball bouncing loop.
+    // Near impact (phase ~ 0 or 1), knees and hand cushion slightly down with spring rebound
+    const impactFactor = Math.pow(Math.cos(ballBouncePhase * Math.PI), 6.0);
+    const kneeCushion = impactFactor * 0.035;
+    const idleBreathing = Math.sin(timeSeconds * 2.4) * 0.012;
+
+    // Pelvis & Knees
+    pelvisGroup.position.y = 0.70 - kneeCushion + idleBreathing;
+    leftLegGroup.rotation.x = 0.12 + kneeCushion * 1.5;
+    rightLegGroup.rotation.x = 0.12 + kneeCushion * 1.5;
+    leftCalfGroup.rotation.x = 0.20 + kneeCushion * 2.0;
+    rightCalfGroup.rotation.x = 0.20 + kneeCushion * 2.0;
+    spineGroup.rotation.x = 0.04 + kneeCushion * 0.4;
+
+    // Right Floating Hand holding padel racket up at the side, face tilted upward for ball bounce
+    rightHandGroup.position.set(0.36, 0.28 - kneeCushion * 0.5, 0.15);
+    racketGroup.rotation.set(Math.PI / 2.05, 0.04, -0.05);
+
+    // Left Floating Hand resting naturally at side with counterbalance bob
+    leftHandGroup.position.set(-0.35, 0.18 + idleBreathing * 0.8, 0.08);
+
+    // Dynamic ground shadow
+    groundShadow.scale.set(1.0 + kneeCushion * 0.5, 1.0 + kneeCushion * 0.5, 1);
+
+    // Face forward towards camera
+    avatarGroup.rotation.y = THREE.MathUtils.damp(avatarGroup.rotation.y, 0, 6.0, dt);
+  };
+
   const setVisible = (visible: boolean) => {
     avatarGroup.visible = visible;
   };
@@ -1305,6 +1389,7 @@ export function buildPadelAvatar(
     racketGroup,
     applyAppearance,
     updateKinematics,
+    updateMenuIdle,
     triggerHitPop,
     triggerDustPuff,
     playStateAnimation,

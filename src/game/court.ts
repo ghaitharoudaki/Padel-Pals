@@ -3,7 +3,7 @@ import { COURT_CONFIG } from './types';
 
 export interface CourtVisuals {
   group: THREE.Group;
-  aimIndicator: THREE.Mesh;
+  aimIndicator: THREE.Object3D;
   ballShadow: THREE.Mesh;
   p1Shadow: THREE.Mesh;
   p2Shadow: THREE.Mesh;
@@ -11,6 +11,8 @@ export interface CourtVisuals {
   p4Shadow: THREE.Mesh;
   landingRing: THREE.Mesh;
   landingDot: THREE.Mesh;
+  southNearWallGroup: THREE.Group;
+  setNearWallVisible: (visible: boolean) => void;
   updateAim: (x: number, z: number, visible: boolean) => void;
   updateShadows: (
     ballPos: THREE.Vector3,
@@ -267,13 +269,19 @@ export function buildPadelCourt(renderer: THREE.WebGLRenderer): CourtVisuals {
   });
 
   // South Glass Wall (Player Baseline Glass, Z = +10m, Height 4m)
+  // Grouped into southNearWallGroup so it can be cleanly hidden when camera is behind South baseline
+  const southNearWallGroup = new THREE.Group();
+  southNearWallGroup.name = 'south-near-wall';
+
   const backGlassSouth = new THREE.Mesh(backGlassGeo, glassMat);
   backGlassSouth.position.set(0, 2.0, halfL);
-  courtGroup.add(backGlassSouth);
+  southNearWallGroup.add(backGlassSouth);
 
   const beamSouth = new THREE.Mesh(beamGeo, steelFrameMat);
   beamSouth.position.set(0, 4.045, halfL);
-  courtGroup.add(beamSouth);
+  southNearWallGroup.add(beamSouth);
+
+  courtGroup.add(southNearWallGroup);
 
   // Side Glass Panels (First 4m extending from corners along the sidelines)
   const sideGlassGeo = new THREE.BoxGeometry(0.04, 3.0, 4.0);
@@ -391,7 +399,7 @@ export function buildPadelCourt(renderer: THREE.WebGLRenderer): CourtVisuals {
 
   // --- Glass Panel Crisp White Safety Outline Borders ---
   const glassOutlineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
-  const addGlassBorder = (w: number, h: number, x: number, y: number, z: number, rotY: number = 0) => {
+  const addGlassBorder = (w: number, h: number, x: number, y: number, z: number, rotY: number = 0, parentGroup: THREE.Group = courtGroup) => {
     const borderGroup = new THREE.Group();
     borderGroup.position.set(x, y, z);
     borderGroup.rotation.y = rotY;
@@ -410,11 +418,11 @@ export function buildPadelCourt(renderer: THREE.WebGLRenderer): CourtVisuals {
     }
 
     borderGroup.add(topBar, bottomBar);
-    courtGroup.add(borderGroup);
+    parentGroup.add(borderGroup);
   };
 
   addGlassBorder(COURT_CONFIG.width, 3.0, 0, 1.5, -halfL);
-  addGlassBorder(COURT_CONFIG.width, 3.0, 0, 1.5, halfL);
+  addGlassBorder(COURT_CONFIG.width, 3.0, 0, 1.5, halfL, 0, southNearWallGroup);
   addGlassBorder(4.0, 3.0, -halfW, 1.5, -8, Math.PI / 2);
   addGlassBorder(4.0, 3.0, halfW, 1.5, -8, Math.PI / 2);
   addGlassBorder(4.0, 3.0, -halfW, 1.5, 8, Math.PI / 2);
@@ -560,18 +568,55 @@ export function buildPadelCourt(renderer: THREE.WebGLRenderer): CourtVisuals {
     });
   };
 
-  // 9. Mouse Aim Target Crosshair (Golden Arcade Ring)
-  const aimGeo = new THREE.RingGeometry(0.26, 0.34, 24);
+  // 9. Opponent Floor Aim Target Reticle (Subtle, sleek 3x2 zone marker)
+  const aimIndicator = new THREE.Group();
+  aimIndicator.position.set(0, 0.02, -7.5);
+
   const aimMat = new THREE.MeshBasicMaterial({
     color: 0xfacc15,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+  });
+
+  const aimInnerMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
     side: THREE.DoubleSide,
     transparent: true,
     opacity: 0.9,
     depthWrite: false,
   });
-  const aimIndicator = new THREE.Mesh(aimGeo, aimMat);
-  aimIndicator.rotation.x = -Math.PI / 2;
-  aimIndicator.position.set(0, 0.02, -5);
+
+  // Outer primary ring
+  const aimOuterMesh = new THREE.Mesh(new THREE.RingGeometry(0.38, 0.44, 32), aimMat);
+  aimOuterMesh.rotation.x = -Math.PI / 2;
+  aimIndicator.add(aimOuterMesh);
+
+  // Inner subtle ping dot
+  const aimDotMesh = new THREE.Mesh(new THREE.CircleGeometry(0.08, 16), aimInnerMat);
+  aimDotMesh.rotation.x = -Math.PI / 2;
+  aimDotMesh.position.y = 0.001;
+  aimIndicator.add(aimDotMesh);
+
+  // Cross notches (4 directional ticks pointing toward center)
+  const notchGeo = new THREE.PlaneGeometry(0.04, 0.16);
+  const notchNorth = new THREE.Mesh(notchGeo, aimMat);
+  notchNorth.rotation.x = -Math.PI / 2;
+  notchNorth.position.set(0, 0.001, -0.46);
+  const notchSouth = new THREE.Mesh(notchGeo, aimMat);
+  notchSouth.rotation.x = -Math.PI / 2;
+  notchSouth.position.set(0, 0.001, 0.46);
+  const notchWest = new THREE.Mesh(notchGeo, aimMat);
+  notchWest.rotation.x = -Math.PI / 2;
+  notchWest.rotation.z = Math.PI / 2;
+  notchWest.position.set(-0.46, 0.001, 0);
+  const notchEast = new THREE.Mesh(notchGeo, aimMat);
+  notchEast.rotation.x = -Math.PI / 2;
+  notchEast.rotation.z = Math.PI / 2;
+  notchEast.position.set(0.46, 0.001, 0);
+  aimIndicator.add(notchNorth, notchSouth, notchWest, notchEast);
+
   courtGroup.add(aimIndicator);
 
   // 10. Ball Landing Prediction Indicator (Contracting timing circle)
@@ -735,6 +780,10 @@ export function buildPadelCourt(renderer: THREE.WebGLRenderer): CourtVisuals {
     p4Shadow,
     landingRing,
     landingDot,
+    southNearWallGroup,
+    setNearWallVisible: (visible: boolean) => {
+      southNearWallGroup.visible = visible;
+    },
     updateAim,
     updateShadows,
     updateLandingPrediction,

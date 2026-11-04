@@ -9,12 +9,34 @@ export type SwingSide = 'forehand' | 'backhand' | 'overhead' | 'serve';
 export type HitQuality = 'PERFECT' | 'GOOD' | 'EARLY' | 'LATE' | 'OUT_OF_REACH';
 export type CameraPreset = 'broadcast' | 'high' | 'close';
 export type MatchLength = '1_game' | '3_games' | '1_set';
+export type AimAssist = 'low' | 'medium' | 'high';
+export type AimTargetZone =
+  | 'left_short'
+  | 'center_short'
+  | 'right_short'
+  | 'left_deep'
+  | 'center_deep'
+  | 'right_deep';
 
 export interface Vector3D {
   x: number;
   y: number;
   z: number;
 }
+
+export type ScreenState =
+  | 'BOOT'
+  | 'MENU'
+  | 'MODE_SELECT'
+  | 'LOCKER'
+  | 'SETTINGS'
+  | 'HOW_TO_PLAY'
+  | 'COUNTDOWN'
+  | 'PLAYING'
+  | 'PAUSED'
+  | 'POINT_SCORED'
+  | 'MATCH_END'
+  | 'RESULTS';
 
 export interface BallState {
   position: Vector3D;
@@ -23,6 +45,7 @@ export interface BallState {
   radius: number;
   lastHitter: Side | null;
   bounceCount: number;
+  bouncesOnSide: { south: number; north: number };
   bouncedInCourt: boolean;
   bouncedSide: Side | null;
   hitWallBeforeFloor: boolean;
@@ -178,7 +201,9 @@ export interface PhysicsEvents {
   netTapeRolledOver: boolean;
   outOfBounds: boolean;
   pointFault: boolean;
+  faultWinner?: Side;
   faultReason?: string;
+  shortReason?: string;
   isLetServe?: boolean;
   collisionPos?: Vector3D;
   collisionNormal?: Vector3D;

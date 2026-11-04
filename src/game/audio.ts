@@ -243,6 +243,12 @@ export class PadelAudioController {
     this.crowdMurmurGain.gain.setTargetAtTime(targetGain * this.sfxVolume, t, 0.4);
   }
 
+  public stopAllCrowdAudio() {
+    if (this.crowdMurmurGain && this.ctx) {
+      this.crowdMurmurGain.gain.setValueAtTime(0.02, this.ctx.currentTime);
+    }
+  }
+
   /**
    * Crowd Cheer + Clap on every won point
    */

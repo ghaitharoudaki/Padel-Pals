@@ -341,7 +341,7 @@ export const CustomizerModal: React.FC<Props> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 md:p-6 select-none animate-in fade-in duration-200">
       {/* Exact reference container: Clean bright pastel card layout */}
-      <div className="relative w-full max-w-5xl h-[92vh] max-h-[820px] bg-gradient-to-b from-[#eef2f9] to-[#dfe7f3] text-zinc-900 rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-white/60">
+      <div className="relative w-full max-w-5xl h-[92vh] max-h-[820px] bg-gradient-to-b from-[#eef2f9] to-[#dfe7f3] text-zinc-900 rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-white/60 animate-in slide-in-from-right-10 duration-250 ease-out">
         
         {/* Subtle background watermark volleyball / padel circles matching reference */}
         <div className="absolute inset-0 pointer-events-none opacity-15 overflow-hidden">

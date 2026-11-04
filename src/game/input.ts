@@ -1,15 +1,17 @@
 import * as THREE from 'three';
-import { HitQuality, ShotType, Vector3D } from './types';
+import { AimTargetZone, HitQuality, ShotType, Vector3D } from './types';
 
 export interface SwingIntent {
   shot: ShotType;
   power: number;
   bias: { x: number; z: number };
+  targetZone: AimTargetZone;
+  targetAim: Vector3D;
   isJumpHit: boolean;
 }
 
 export interface InputManagerConfig {
-  mountElement: HTMLElement;
+  mountElement?: HTMLElement | null;
   camera: THREE.Camera;
   onSwing: (intent: SwingIntent) => void;
   onChargeChange: (power: number) => void;
@@ -18,30 +20,66 @@ export interface InputManagerConfig {
   onJumpRequest?: () => void;
 }
 
+/**
+ * 3x2 Opponent Court Aiming Grid Coordinates (North Side, Z < 0)
+ * Left / Center / Right  x  Short / Deep
+ * Default when no direction is pressed: Center-Deep
+ */
+export const AIM_ZONES: Record<AimTargetZone, Vector3D> = {
+  left_deep: { x: -2.5, y: 0, z: -7.5 },
+  center_deep: { x: 0.0, y: 0, z: -7.5 }, // Default safe deep drive
+  right_deep: { x: 2.5, y: 0, z: -7.5 },
+  left_short: { x: -2.5, y: 0, z: -3.2 },
+  center_short: { x: 0.0, y: 0, z: -3.2 },
+  right_short: { x: 2.5, y: 0, z: -3.2 },
+};
+
 export class InputManager {
   private config: InputManagerConfig;
+  public isEnabled = false;
   private keys: Record<string, boolean> = {};
   private isCharging = false;
   private chargeStartTime = 0;
   private currentChargePower = 0.65;
-  private mouseAim: Vector3D = { x: 0, y: 0, z: -6.0 };
-  private raycaster = new THREE.Raycaster();
-  private mouse2D = new THREE.Vector2();
-  private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  private intersectPoint = new THREE.Vector3();
+
+  // Snapped directional aim & smooth interpolated floor marker
+  private targetZone: AimTargetZone = 'center_deep';
+  private currentAim: Vector3D = { x: 0, y: 0, z: -7.5 };
+
+  // Virtual touch stick & buttons for mobile support
+  private virtualStick = { x: 0, z: 0 };
 
   constructor(config: InputManagerConfig) {
     this.config = config;
     this.attach();
   }
 
+  public setEnabled(enabled: boolean) {
+    this.isEnabled = enabled;
+    if (!enabled) {
+      this.keys = {};
+      this.isCharging = false;
+      this.currentChargePower = 0.65;
+      this.virtualStick = { x: 0, z: 0 };
+    }
+  }
+
   public getKeys(): Record<string, boolean> {
     return this.keys;
   }
 
+  public setVirtualStick(x: number, z: number) {
+    this.virtualStick.x = x;
+    this.virtualStick.z = z;
+  }
+
   public getMovementInput(): { x: number; z: number; sprint: boolean } {
-    let x = 0;
-    let z = 0;
+    if (!this.isEnabled) {
+      return { x: 0, z: 0, sprint: false };
+    }
+    let x = this.virtualStick.x;
+    let z = this.virtualStick.z;
+
     if (this.keys['d'] || this.keys['arrowright']) x += 1;
     if (this.keys['a'] || this.keys['arrowleft']) x -= 1;
     if (this.keys['s'] || this.keys['arrowdown']) z += 1;
@@ -49,7 +87,7 @@ export class InputManager {
 
     // Normalize diagonal movement
     const len = Math.hypot(x, z);
-    if (len > 0) {
+    if (len > 1.0) {
       x /= len;
       z /= len;
     }
@@ -58,8 +96,33 @@ export class InputManager {
     return { x, z, sprint };
   }
 
-  public getMouseAim(): Vector3D {
-    return this.mouseAim;
+  /**
+   * Determine 3x2 Grid Target Zone from held directional inputs:
+   * Horizontal: Left (A / Left) | Center (none) | Right (D / Right)
+   * Depth: Short (S / Down / Stick back) | Deep (W / Up / none -> Default Deep)
+   */
+  public getTargetZone(): AimTargetZone {
+    const move = this.getMovementInput();
+    let col: 'left' | 'center' | 'right' = 'center';
+    let row: 'short' | 'deep' = 'deep'; // Default is center-deep
+
+    if (move.x < -0.25 || this.keys['a'] || this.keys['arrowleft']) {
+      col = 'left';
+    } else if (move.x > 0.25 || this.keys['d'] || this.keys['arrowright']) {
+      col = 'right';
+    }
+
+    if (move.z > 0.25 || this.keys['s'] || this.keys['arrowdown']) {
+      row = 'short';
+    } else {
+      row = 'deep'; // W, Up Arrow, or neutral defaults to deep
+    }
+
+    return `${col}_${row}` as AimTargetZone;
+  }
+
+  public getAim(): Vector3D {
+    return { ...this.currentAim };
   }
 
   public getIsCharging(): boolean {
@@ -70,32 +133,36 @@ export class InputManager {
     return this.currentChargePower;
   }
 
-  public update(now: number) {
+  /**
+   * Called every frame in game loop:
+   * - Evaluates target zone from directional inputs
+   * - Smoothly snaps target marker between zones
+   * - Emits onAimChange to update court floor visual target
+   */
+  public update(now: number, dt: number = 0.016) {
+    if (!this.isEnabled) return;
+
     if (this.isCharging) {
       const elapsed = (now - this.chargeStartTime) / 1000;
-      this.currentChargePower = Math.min(1.0, 0.50 + elapsed * 1.1);
+      this.currentChargePower = Math.min(1.0, 0.50 + elapsed * 1.15);
       this.config.onChargeChange(this.currentChargePower);
     }
+
+    // Determine discrete 3x2 target zone
+    this.targetZone = this.getTargetZone();
+    const targetPos = AIM_ZONES[this.targetZone];
+
+    // Smooth snappy interpolation between court zones
+    const lerpRate = Math.min(1.0, dt * 14.0);
+    this.currentAim.x += (targetPos.x - this.currentAim.x) * lerpRate;
+    this.currentAim.z += (targetPos.z - this.currentAim.z) * lerpRate;
+    this.currentAim.y = 0;
+
+    this.config.onAimChange(this.currentAim);
   }
 
-  private handlePointerMove = (e: MouseEvent) => {
-    const rect = this.config.mountElement.getBoundingClientRect();
-    this.mouse2D.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    this.mouse2D.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-    this.raycaster.setFromCamera(this.mouse2D, this.config.camera);
-    if (this.raycaster.ray.intersectPlane(this.groundPlane, this.intersectPoint)) {
-      this.mouseAim = {
-        x: Math.max(-4.4, Math.min(4.4, this.intersectPoint.x)),
-        y: 0,
-        z: Math.max(-9.2, Math.min(-1.0, this.intersectPoint.z)),
-      };
-      this.config.onAimChange(this.mouseAim);
-    }
-  };
-
   /**
-   * Determine shot type based on modifiers:
+   * Determine shot type based on key shortcuts:
    * - Shift held: Lob
    * - Ctrl held: Drop shot
    * - Jump / overhead: Smash
@@ -116,46 +183,62 @@ export class InputManager {
     return this.currentChargePower > 0.75 ? 'topspin' : 'flat';
   }
 
-  private triggerHit(power: number) {
-    const biasX =
-      (this.keys['d'] || this.keys['arrowright'] ? 1 : 0) -
-      (this.keys['a'] || this.keys['arrowleft'] ? 1 : 0);
-    const biasZ =
-      (this.keys['w'] || this.keys['arrowup'] ? 1 : 0) -
-      (this.keys['s'] || this.keys['arrowdown'] ? 1 : 0);
+  public triggerHit(power: number, forceShot?: ShotType) {
+    if (!this.isEnabled) return;
+    const zone = this.getTargetZone();
+    const targetAim = AIM_ZONES[zone];
 
     const intent: SwingIntent = {
-      shot: 'flat', // will be contextualized by App.tsx with ball height
+      shot: forceShot || 'flat',
       power,
-      bias: { x: biasX, z: biasZ },
+      bias: { x: targetAim.x * 0.4, z: targetAim.z * 0.2 },
+      targetZone: zone,
+      targetAim,
       isJumpHit: false,
     };
 
     this.config.onSwing(intent);
   }
 
+  // Mobile / Touch controls API
+  public startTouchCharge() {
+    if (!this.isEnabled) return;
+    this.isCharging = true;
+    this.chargeStartTime = performance.now();
+    this.currentChargePower = 0.50;
+    this.config.onChargeChange(this.currentChargePower);
+  }
+
+  public releaseTouchCharge(forceShot?: ShotType) {
+    if (!this.isEnabled) return;
+    this.isCharging = false;
+    const power = Math.max(0.60, this.currentChargePower);
+    this.triggerHit(power, forceShot);
+    this.currentChargePower = 0.65;
+    this.config.onChargeChange(0.65);
+  }
+
+  public triggerTouchLob() {
+    if (!this.isEnabled) return;
+    this.triggerHit(0.75, 'lob');
+  }
+
+  // Mouse click handling: Left click charges / hits, right click instant smash
+  // Mouse position does NOT aim the ball
   private handleMouseDown = (e: MouseEvent) => {
+    if (!this.isEnabled) return;
     if (e.button === 0) {
-      // Left click charge swing
       this.isCharging = true;
       this.chargeStartTime = performance.now();
       this.currentChargePower = 0.50;
       this.config.onChargeChange(this.currentChargePower);
     } else if (e.button === 2) {
-      // Right click instant smash / spike
-      this.config.onSwing({
-        shot: 'smash',
-        power: 0.95,
-        bias: {
-          x: (this.keys['d'] ? 1 : 0) - (this.keys['a'] ? 1 : 0),
-          z: (this.keys['w'] ? 1 : 0) - (this.keys['s'] ? 1 : 0),
-        },
-        isJumpHit: true,
-      });
+      this.triggerHit(0.95, 'smash');
     }
   };
 
   private handleMouseUp = (e: MouseEvent) => {
+    if (!this.isEnabled) return;
     if (e.button === 0 && this.isCharging) {
       this.isCharging = false;
       const power = Math.max(0.55, this.currentChargePower);
@@ -166,19 +249,20 @@ export class InputManager {
   };
 
   private handleKeyDown = (e: KeyboardEvent) => {
-    const key = e.key.toLowerCase();
-    this.keys[key] = true;
-    if (e.key === 'Shift') this.keys['shift'] = true;
-    if (e.key === 'Control') this.keys['control'] = true;
-
-    // F3 toggles debug overlay
     if (e.code === 'F3') {
       e.preventDefault();
       this.config.onToggleDebug();
       return;
     }
 
-    // Spacebar: ONE hit button (hold to charge, release to strike)
+    if (!this.isEnabled) return;
+
+    const key = e.key.toLowerCase();
+    this.keys[key] = true;
+    if (e.key === 'Shift') this.keys['shift'] = true;
+    if (e.key === 'Control') this.keys['control'] = true;
+
+    // Spacebar: hit button (hold to charge, release to strike)
     if (e.code === 'Space' && !e.repeat) {
       e.preventDefault();
       this.isCharging = true;
@@ -187,7 +271,7 @@ export class InputManager {
       this.config.onChargeChange(this.currentChargePower);
     }
 
-    // J or E key triggers jump for smashes
+    // J or E triggers jump for smash
     if ((key === 'j' || key === 'e') && !e.repeat) {
       e.preventDefault();
       this.config.onJumpRequest?.();
@@ -195,6 +279,11 @@ export class InputManager {
   };
 
   private handleKeyUp = (e: KeyboardEvent) => {
+    if (!this.isEnabled) {
+      this.keys = {};
+      return;
+    }
+
     const key = e.key.toLowerCase();
     this.keys[key] = false;
     if (e.key === 'Shift') this.keys['shift'] = false;
@@ -217,20 +306,22 @@ export class InputManager {
   };
 
   private attach() {
-    window.addEventListener('mousemove', this.handlePointerMove);
-    window.addEventListener('mousedown', this.handleMouseDown);
-    window.addEventListener('mouseup', this.handleMouseUp);
-    window.addEventListener('contextmenu', this.handleContextMenu);
-    window.addEventListener('keydown', this.handleKeyDown);
-    window.addEventListener('keyup', this.handleKeyUp);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mousedown', this.handleMouseDown);
+      window.addEventListener('mouseup', this.handleMouseUp);
+      window.addEventListener('contextmenu', this.handleContextMenu);
+      window.addEventListener('keydown', this.handleKeyDown);
+      window.addEventListener('keyup', this.handleKeyUp);
+    }
   }
 
   public dispose() {
-    window.removeEventListener('mousemove', this.handlePointerMove);
-    window.removeEventListener('mousedown', this.handleMouseDown);
-    window.removeEventListener('mouseup', this.handleMouseUp);
-    window.removeEventListener('contextmenu', this.handleContextMenu);
-    window.removeEventListener('keydown', this.handleKeyDown);
-    window.removeEventListener('keyup', this.handleKeyUp);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('mousedown', this.handleMouseDown);
+      window.removeEventListener('mouseup', this.handleMouseUp);
+      window.removeEventListener('contextmenu', this.handleContextMenu);
+      window.removeEventListener('keydown', this.handleKeyDown);
+      window.removeEventListener('keyup', this.handleKeyUp);
+    }
   }
 }

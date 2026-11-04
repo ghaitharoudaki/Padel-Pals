@@ -65,7 +65,7 @@ export interface ClientInputPacket {
   power: number;
   aimX: number;
   aimZ: number;
-  bias?: 'flat' | 'slice' | 'topspin';
+  bias?: { x: number; z: number };
   timestamp: number;
 }
 
@@ -84,6 +84,18 @@ export interface MultiplayerCallbacks {
 export function q(num: number, decimals: number = 2): number {
   const factor = Math.pow(10, decimals);
   return Math.round(num * factor) / factor;
+}
+
+/**
+ * Generate a clean 5-character alphanumeric room code (no ambiguous characters like 0/O, 1/I)
+ */
+export function generateRoomCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 5; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
 }
 
 /**
@@ -278,60 +290,69 @@ export class MultiplayerClient {
 
     // 2. WebRTC PeerJS
     try {
-      const peerId = asHost
-        ? `padelpals-${roomId.toLowerCase()}`
-        : `padelpals-${roomId.toLowerCase()}-${this.myPlayerId}`;
+      const PeerCtor = (Peer as any)?.default || (Peer as any)?.Peer || Peer;
+      const hasWebRTC =
+        typeof window !== 'undefined' &&
+        (typeof (window as any).RTCPeerConnection !== 'undefined' ||
+          typeof (window as any).webkitRTCPeerConnection !== 'undefined');
 
-      this.peer = new Peer(peerId, {
-        debug: 0,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-          ],
-        },
-      });
+      if (typeof PeerCtor === 'function' && hasWebRTC) {
+        const peerId = asHost
+          ? `padelpals-${roomId.toLowerCase()}`
+          : `padelpals-${roomId.toLowerCase()}-${this.myPlayerId}`;
 
-      this.peer.on('open', () => {
-        this.isConnected = true;
-        this.callbacks.onConnectionStatusChanged?.('connected');
+        const peer = new PeerCtor(peerId, {
+          debug: 0,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+            ],
+          },
+        });
+        this.peer = peer;
 
-        if (asHost) {
-          // Host broadcast initial lobby state
-          this.broadcastLobbyState();
-        } else {
-          // Client connects to host peer
-          const hostPeerId = `padelpals-${roomId.toLowerCase()}`;
-          const conn = this.peer!.connect(hostPeerId, { reliable: true });
+        peer.on('open', () => {
+          this.isConnected = true;
+          this.callbacks.onConnectionStatusChanged?.('connected');
+
+          if (asHost) {
+            // Host broadcast initial lobby state
+            this.broadcastLobbyState();
+          } else {
+            // Client connects to host peer
+            const hostPeerId = `padelpals-${roomId.toLowerCase()}`;
+            const conn = peer.connect(hostPeerId, { reliable: true });
+            this.setupConnection(conn, appearance);
+            this.hostConnection = conn;
+
+            // Also broadcast join request via BroadcastChannel
+            this.sendTransportMessage({
+              type: 'request_join',
+              playerId: this.myPlayerId,
+              appearance,
+            });
+          }
+        });
+
+        peer.on('connection', (conn: any) => {
           this.setupConnection(conn, appearance);
-          this.hostConnection = conn;
+        });
 
-          // Also broadcast join request via BroadcastChannel
-          this.sendTransportMessage({
-            type: 'request_join',
-            playerId: this.myPlayerId,
-            appearance,
-          });
-        }
-      });
-
-      this.peer.on('connection', (conn) => {
-        this.setupConnection(conn, appearance);
-      });
-
-      this.peer.on('error', (err) => {
-        // If host ID is already taken, try joining as client
-        if (asHost && err.type === 'unavailable-id') {
-          console.warn('Room host ID already active; switching to join mode');
-          this.isHost = false;
-          this.joinRoom(roomId, appearance);
-          return;
-        }
-        console.warn('PeerJS warning:', err.type, err.message);
-      });
-    } catch (e) {
-      console.warn('PeerJS initialization skipped:', e);
+        peer.on('error', (err: any) => {
+          // If host ID is already taken, try joining as client
+          if (asHost && err.type === 'unavailable-id') {
+            console.warn('Room host ID already active; switching to join mode');
+            this.isHost = false;
+            this.joinRoom(roomId, appearance);
+            return;
+          }
+          console.warn('PeerJS warning:', err.type, err.message);
+        });
     }
+  } catch (e) {
+    console.warn('PeerJS initialization skipped:', e);
+  }
 
     // If Host, mark connected and start ping ticker
     if (asHost) {

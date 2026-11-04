@@ -1,4 +1,5 @@
 import {
+  AimAssist,
   BallState,
   COURT_CONFIG,
   HitQuality,
@@ -32,6 +33,7 @@ export function createInitialBall(servingSide: Side = 'south', serverPos?: Vecto
     radius: BALL_RADIUS,
     lastHitter: null,
     bounceCount: 0,
+    bouncesOnSide: { south: 0, north: 0 },
     bouncedInCourt: false,
     bouncedSide: null,
     hitWallBeforeFloor: false,
@@ -119,6 +121,13 @@ export function stepBallPhysics(
 
     // 2. Continuous Net Collision check at z = 0 (|x| <= 5.0)
     if ((p0.z > 0 && p1.z <= 0) || (p0.z < 0 && p1.z >= 0)) {
+      // Net crossing: reset the receiving side's bounce count
+      if (p0.z > 0 && p1.z <= 0) {
+        b.bouncesOnSide.north = 0;
+      } else {
+        b.bouncesOnSide.south = 0;
+      }
+
       const denom = p1.z - p0.z;
       const t = denom !== 0 ? (0 - p0.z) / denom : 0;
       if (t >= 0 && t <= 1) {
@@ -153,7 +162,10 @@ export function stepBallPhysics(
               b.velocity.x *= 0.25;
               b.velocity.y = -0.5;
               events.pointFault = true;
+              // Fault against hitter who hit into net
+              events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
               events.faultReason = 'Ball hit the net!';
+              events.shortReason = 'Net';
             }
           }
         }
@@ -191,7 +203,9 @@ export function stepBallPhysics(
 
       if (insideCourtX && insideCourtZ) {
         b.bouncedInCourt = true;
-        b.bouncedSide = zBounce > 0 ? 'south' : 'north';
+        const bounceSide: Side = zBounce > 0 ? 'south' : 'north';
+        b.bouncedSide = bounceSide;
+        b.bouncesOnSide[bounceSide] = (b.bouncesOnSide[bounceSide] || 0) + 1;
 
         // Check if serve bounce is in the designated service box
         if (b.isServe) {
@@ -204,30 +218,50 @@ export function stepBallPhysics(
 
           if (!inCorrectHalf || !inServiceDepth || !inCorrectBox) {
             events.pointFault = true;
+            events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
             events.faultReason = 'Serve out of designated service box!';
+            events.shortReason = 'Out';
           } else if (events.netTapeRolledOver) {
             // Net tape hit and landed in service box -> LET!
             events.isLetServe = true;
             events.pointFault = true;
             events.faultReason = 'Let serve! Ball hit net tape and landed in service box.';
+            events.shortReason = 'Let';
           }
+        }
+
+        // DOUBLE BOUNCE RULE:
+        // In padel, ball may bounce only once on a side before being returned!
+        // If it bounces a 2nd time on a side without being hit by that side,
+        // that side fails to return -> the OTHER team gets the point!
+        if (b.bouncesOnSide[bounceSide] >= 2) {
+          events.pointFault = true;
+          events.faultWinner = bounceSide === 'south' ? 'north' : 'south';
+          events.faultReason = `Double bounce on ${bounceSide === 'south' ? 'South' : 'North'} side!`;
+          events.shortReason = 'Double bounce';
         }
       } else {
         events.outOfBounds = true;
         events.pointFault = true;
+        // Ball landed out of court -> fault against last hitter
+        events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
         events.faultReason = 'Ball bounced out of court!';
-      }
-
-      // In padel, ball may bounce only once on opponent court floor before being hit!
-      if (b.bounceCount >= 2) {
-        events.pointFault = true;
-        events.faultReason = 'Double bounce on court floor!';
+        events.shortReason = 'Out';
       }
     } else {
       b.position.y = p1.y;
     }
 
-    // 4. Continuous Back Glass Wall Collision check (Z = ±(10 - r), height <= 4.0m)
+    // Out of bounds check: ball flew beyond the court cage
+    if (Math.abs(p1.x) > halfW + 0.5 || Math.abs(p1.z) > halfL + 0.5) {
+      events.outOfBounds = true;
+      events.pointFault = true;
+      events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
+      events.faultReason = 'Ball hit out of court!';
+      events.shortReason = 'Out';
+      b.position.x = p1.x;
+      b.position.z = p1.z;
+    } else {
     const backWallZ = halfL - r;
     if (Math.abs(p1.z) >= backWallZ && b.position.y <= COURT_CONFIG.glassBackWallHeight) {
       const isNorth = p1.z < 0;
@@ -250,7 +284,9 @@ export function stepBallPhysics(
       if (b.bounceCount === 0) {
         b.hitWallBeforeFloor = true;
         events.pointFault = true;
+        events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
         events.faultReason = 'Ball hit back glass without bouncing on court floor first!';
+        events.shortReason = 'Wall first';
       }
     } else {
       b.position.z = p1.z;
@@ -284,7 +320,9 @@ export function stepBallPhysics(
         // Padel Serve Rule: On a serve, ball bouncing in service box and hitting fence = FAULT!
         if (b.isServe) {
           events.pointFault = true;
+          events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
           events.faultReason = 'Serve hit side wire mesh fence after bounce (Serve Fault)!';
+          events.shortReason = 'Serve fault';
         }
       }
 
@@ -297,10 +335,13 @@ export function stepBallPhysics(
       if (b.bounceCount === 0) {
         b.hitWallBeforeFloor = true;
         events.pointFault = true;
+        events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
         events.faultReason = 'Ball hit side wall without bouncing on court floor first!';
+        events.shortReason = 'Wall first';
       }
     } else {
       b.position.x = p1.x;
+    }
     }
   }
 
@@ -475,36 +516,37 @@ export function strikeBallWithRacket(
   targetAim: Vector3D,
   playerPos: Vector3D,
   directionalBias?: { x: number; z: number },
-  timingQuality: HitQuality = 'GOOD'
+  timingQuality: HitQuality = 'GOOD',
+  aimAssist: AimAssist = 'high'
 ): BallState {
   let aimX = targetAim.x;
   let aimZ = targetAim.z;
 
-  // Auto-aim direction from movement input held at hit time:
-  // Forward (bias.z > 0) = deep shot into opponent baseline
-  // Backward (bias.z < 0) = short / drop shot
-  // Left / Right (bias.x) = angled cross-court or down-the-line
+  // Auto-aim direction from movement input held at hit time
   if (directionalBias) {
-    aimX += directionalBias.x * 2.8;
-    aimZ += directionalBias.z * 2.6 * (playerSide === 'south' ? -1 : 1);
+    aimX += directionalBias.x * (aimAssist === 'high' ? 1.4 : 2.5);
+    aimZ += directionalBias.z * (aimAssist === 'high' ? 1.2 : 2.2) * (playerSide === 'south' ? -1 : 1);
   }
 
-  // Timing quality modifications:
-  // EARLY: pulled shot with sharper angle
-  // LATE: pushed wide or weak
+  // Timing quality modifications
   if (timingQuality === 'EARLY') {
-    aimX += (playerSide === 'south' ? -0.8 : 0.8);
+    aimX += (playerSide === 'south' ? -0.4 : 0.4);
   } else if (timingQuality === 'LATE') {
-    aimX += (playerSide === 'south' ? 0.7 : -0.7);
-    aimZ *= 0.85; // shallower depth
+    aimX += (playerSide === 'south' ? 0.4 : -0.4);
+    aimZ *= 0.90; // slightly shallower depth
   }
 
-  // Clamp aim to valid opponent court bounds
-  aimX = Math.max(-4.4, Math.min(4.4, aimX));
+  // Strong Aim Assist boundary clamping:
+  // Under 'high': safely inside side lines and baseline, preventing accidental out-of-bounds shots
+  const clampX = aimAssist === 'high' ? 4.1 : aimAssist === 'medium' ? 4.4 : 4.7;
+  const clampZNear = aimAssist === 'high' ? 1.8 : aimAssist === 'medium' ? 1.4 : 1.0;
+  const clampZFar = aimAssist === 'high' ? 8.8 : aimAssist === 'medium' ? 9.2 : 9.6;
+
+  aimX = Math.max(-clampX, Math.min(clampX, aimX));
   if (playerSide === 'south') {
-    aimZ = Math.max(-9.4, Math.min(-1.5, aimZ));
+    aimZ = Math.max(-clampZFar, Math.min(-clampZNear, aimZ));
   } else {
-    aimZ = Math.max(1.5, Math.min(9.4, aimZ));
+    aimZ = Math.max(clampZNear, Math.min(clampZFar, aimZ));
   }
 
   const dx = aimX - ball.position.x;
@@ -572,8 +614,27 @@ export function strikeBallWithRacket(
 
   // Late reach reduces speed
   if (timingQuality === 'LATE') {
-    speed *= 0.82;
-    vy *= 0.9;
+    speed *= 0.85;
+    vy *= 0.92;
+  }
+
+  // AIM ASSIST: Automatically adjust launch arc so shots clear the net
+  // Distance to net line Z=0
+  const distToNet = Math.abs(ball.position.z);
+  if (distToNet > 0.4 && shotType !== 'smash' && aimAssist !== 'low') {
+    const netClearanceHeight = aimAssist === 'high' ? 1.02 : 0.95;
+    const estTimeNet = distToNet / Math.max(5.0, speed * 0.75);
+    const heightAtNet = ball.position.y + vy * estTimeNet - 0.5 * GRAVITY * estTimeNet * estTimeNet;
+    if (heightAtNet < netClearanceHeight) {
+      vy = (netClearanceHeight - ball.position.y + 0.5 * GRAVITY * estTimeNet * estTimeNet) / estTimeNet;
+    }
+  }
+
+  // Prevent accidental out-of-bounds in high aim assist mode
+  // Only power smashes with late reach/timing can go out
+  const isRiskyShot = shotType === 'smash' && effectivePower > 0.90 && (timingQuality === 'LATE' || timingQuality === 'OUT_OF_REACH');
+  if (aimAssist === 'high' && !isRiskyShot) {
+    speed = Math.min(speed, 19.5);
   }
 
   const dirX = dist > 0.01 ? dx / dist : 0;
@@ -588,6 +649,7 @@ export function strikeBallWithRacket(
     spin: { x: spinX, y: spinY, z: 0 },
     lastHitter: playerSide,
     bounceCount: 0,
+    bouncesOnSide: { south: 0, north: 0 },
     bouncedInCourt: false,
     bouncedSide: null,
     hitWallBeforeFloor: false,
