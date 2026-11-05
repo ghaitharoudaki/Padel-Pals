@@ -952,6 +952,7 @@ export default function App() {
             const clientSlot = multiplayerClientRef.current?.mySlot || 2;
             const localPlayer =
               clientSlot === 2 ? p2 : clientSlot === 3 ? p3 : clientSlot === 4 ? p4 : p1;
+            inputManager.setPlayerSide(localPlayer.side);
 
             // 1. Send client input at 60 Hz with 3-packet history redundancy
             if (now - lastInputSendTime > 16) {
@@ -984,7 +985,7 @@ export default function App() {
             }
 
             // 3. Interpolate remote players from buffer with adaptive delay
-            const allPlayers = [
+            const allPlayers: Array<{ slot: 1 | 2 | 3 | 4; p: PlayerState }> = [
               { slot: 1, p: p1 },
               { slot: 2, p: p2 },
               { slot: 3, p: p3 },
@@ -1543,7 +1544,7 @@ export default function App() {
               : p1;
 
           // Camera update smoothly following ball and player
-          cameraController.update(dt, isMenu, myPlayer.position, ballMesh.position);
+          cameraController.update(dt, isMenu, myPlayer.position, ballMesh.position, myPlayer.side);
 
           // Spatial Audio Listener sync to 3D Camera
           cameraController.camera.getWorldDirection(camForwardVec);
@@ -2170,8 +2171,10 @@ export default function App() {
           snapshotRateHz: multiplayerClientRef.current?.getDebugStats()?.snapshotRateHz ?? (isHost ? 30 : 0),
           packetLossPercent: multiplayerClientRef.current?.getDebugStats()?.packetLossPercent ?? 0,
           bufferHealthMs: multiplayerClientRef.current?.getDebugStats()?.bufferHealthMs ?? 65,
+          simulatedLatencyMs: multiplayerClientRef.current?.simulatedLatencyMs ?? 0,
+          connectionStatus,
           mode: roomConfig.mode,
-          transport: multiplayerClientRef.current?.getDebugStats()?.transport ?? 'WebRTC Dual-Channel',
+          channelType: multiplayerClientRef.current?.getDebugStats()?.transport ?? 'WebRTC Dual-Channel',
         }}
       />
 

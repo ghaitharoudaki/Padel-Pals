@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AimTargetZone, HitQuality, ShotType, Vector3D } from './types';
+import { AimTargetZone, HitQuality, ShotType, Side, Vector3D } from './types';
 
 export interface SwingIntent {
   shot: ShotType;
@@ -48,6 +48,7 @@ export class InputManager {
 
   // Virtual touch stick & buttons for mobile support
   private virtualStick = { x: 0, z: 0 };
+  private playerSide: Side = 'south';
 
   constructor(config: InputManagerConfig) {
     this.config = config;
@@ -73,6 +74,12 @@ export class InputManager {
     this.virtualStick.z = z;
   }
 
+  public setPlayerSide(side: Side) {
+    this.playerSide = side;
+    if (side === 'north' && this.currentAim.z < 0) this.currentAim.z *= -1;
+    if (side === 'south' && this.currentAim.z > 0) this.currentAim.z *= -1;
+  }
+
   public getMovementInput(): { x: number; z: number; sprint: boolean } {
     if (!this.isEnabled) {
       return { x: 0, z: 0, sprint: false };
@@ -84,6 +91,7 @@ export class InputManager {
     if (this.keys['a'] || this.keys['arrowleft']) x -= 1;
     if (this.keys['s'] || this.keys['arrowdown']) z += 1;
     if (this.keys['w'] || this.keys['arrowup']) z -= 1;
+    if (this.playerSide === 'north') z *= -1;
 
     // Normalize diagonal movement
     const len = Math.hypot(x, z);
@@ -155,7 +163,8 @@ export class InputManager {
     // Smooth snappy interpolation between court zones
     const lerpRate = Math.min(1.0, dt * 14.0);
     this.currentAim.x += (targetPos.x - this.currentAim.x) * lerpRate;
-    this.currentAim.z += (targetPos.z - this.currentAim.z) * lerpRate;
+    const sideTargetZ = this.playerSide === 'south' ? targetPos.z : -targetPos.z;
+    this.currentAim.z += (sideTargetZ - this.currentAim.z) * lerpRate;
     this.currentAim.y = 0;
 
     this.config.onAimChange(this.currentAim);

@@ -3,8 +3,8 @@ import { Wifi, Activity, Shield, Users, Server, Radio, ArrowUpDown } from 'lucid
 
 export interface NetDebugStats {
   peerId: string | null;
-  role: 'HOST' | 'CLIENT';
-  slot: 1 | 2 | 3 | 4;
+  role: 'HOST' | 'CLIENT' | 'OFFLINE';
+  mySlot: 1 | 2 | 3 | 4;
   side: 'south' | 'north';
   team: 'blue' | 'red';
   roomCode: string | null;
@@ -15,6 +15,7 @@ export interface NetDebugStats {
   mode: '1v1' | '2v2';
   connectionStatus: string;
   channelType: string;
+  bufferHealthMs: number;
 }
 
 interface Props {
@@ -78,7 +79,7 @@ export const NetDebugOverlay: React.FC<Props> = ({ visible, onToggle, stats }) =
                   : 'bg-red-600/30 text-red-300 border border-red-500/40'
               }`}
             >
-              P{stats.slot} (Team {stats.team.toUpperCase()} - {stats.side.toUpperCase()})
+              P{stats.mySlot} (Team {stats.team.toUpperCase()} - {stats.side.toUpperCase()})
             </span>
           </div>
 
@@ -89,6 +90,11 @@ export const NetDebugOverlay: React.FC<Props> = ({ visible, onToggle, stats }) =
             <span className="font-bold tracking-widest text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">
               {stats.roomCode || 'NONE'}
             </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500 uppercase">Buffer:</span>
+            <span className="font-bold text-cyan-300">{stats.bufferHealthMs} ms</span>
           </div>
 
           <div className="flex items-center justify-between">

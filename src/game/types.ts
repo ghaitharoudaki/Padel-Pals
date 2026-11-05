@@ -232,3 +232,46 @@ export interface MatchReliableEvent {
   winner?: Side;
   scoreState?: ScoreState;
 }
+
+export interface CompactPlayerSnapshot {
+  s: 1 | 2 | 3 | 4;
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vz: number;
+  sw: boolean;
+  sp: number;
+  ss: SwingSide;
+  st: ShotType;
+}
+
+export interface CompactSnapshot {
+  seq: number;
+  t: number;
+  ackSeq: Record<number, number>;
+  b: [number, number, number, number, number, number, boolean, Side | null, number];
+  p: CompactPlayerSnapshot[];
+  sc: {
+    g: [number, number];
+    pts: [string, string];
+    raw: [number, number];
+    s: Side;
+    r: number;
+  };
+}
+
+export interface ClientInputPacket {
+  seq: number;
+  dt: number;
+  moveX: number;
+  moveZ: number;
+  isJumping: boolean;
+  wantsSwing: boolean;
+  shotType: ShotType;
+  power: number;
+  aimX: number;
+  aimZ: number;
+  bias?: { x: number; z: number };
+  timestamp: number;
+}

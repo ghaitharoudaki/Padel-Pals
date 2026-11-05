@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CameraPreset, Vector3D } from './types';
+import { CameraPreset, Side, Vector3D } from './types';
 
 export class CameraController {
   public camera: THREE.PerspectiveCamera;
@@ -86,7 +86,13 @@ export class CameraController {
     this.shakeDecay = duration > 0 ? intensity / duration : 10;
   }
 
-  public update(dt: number, isMenu: boolean, p1Pos: Vector3D, ballPos?: Vector3D) {
+  public update(
+    dt: number,
+    isMenu: boolean,
+    p1Pos: Vector3D,
+    ballPos?: Vector3D,
+    playerSide: Side = 'south'
+  ) {
     // Update shake decay
     let offsetX = 0;
     let offsetY = 0;
@@ -170,14 +176,15 @@ export class CameraController {
       const bX = ballPos ? ballPos.x : 0;
       const targetCamX = p1Pos.x * 0.15 + bX * 0.25 + offsetX;
       const targetCamY = baseCamY + offsetY;
-      const targetCamZ = baseCamZ;
+      const sideSign = playerSide === 'south' ? 1 : -1;
+      const targetCamZ = baseCamZ * sideSign;
 
       this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, targetCamX, 4.5, dt);
       this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, targetCamY, 4.5, dt);
       this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, targetCamZ, 4.5, dt);
 
       const lookTargetX = p1Pos.x * 0.1 + bX * 0.2;
-      this.camera.lookAt(lookTargetX, targetLookY, targetLookZ);
+      this.camera.lookAt(lookTargetX, targetLookY, targetLookZ * sideSign);
     }
   }
 }

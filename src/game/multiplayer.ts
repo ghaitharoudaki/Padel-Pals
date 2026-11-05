@@ -1,5 +1,5 @@
 import Peer, { DataConnection } from 'peerjs';
-import {
+import type {
   BallState,
   CompactPlayerSnapshot,
   CompactSnapshot,
@@ -38,7 +38,7 @@ export interface LobbySlot {
   ping: number;
 }
 
-export { CompactPlayerSnapshot, CompactSnapshot, ClientInputPacket };
+export type { CompactPlayerSnapshot, CompactSnapshot, ClientInputPacket };
 
 export interface MultiplayerCallbacks {
   onLobbyUpdated?: (
@@ -115,6 +115,8 @@ export class MultiplayerClient {
   private peer: Peer | null = null;
   private reliableConnections: Map<string, DataConnection> = new Map();
   private unreliableConnections: Map<string, DataConnection> = new Map();
+  private connectionPlayerIds: Map<string, string> = new Map();
+  private joinRequestIds: Set<string> = new Set();
   private hostReliableConn: DataConnection | null = null;
   private hostUnreliableConn: DataConnection | null = null;
 
@@ -397,9 +399,14 @@ export class MultiplayerClient {
 
         peer.on('error', (err: any) => {
           if (asHost && err.type === 'unavailable-id') {
-            console.warn('Room host ID already active; switching to join mode');
-            this.isHost = false;
-            this.joinRoom(roomId, appearance);
+            this.isConnected = false;
+            this.callbacks.onConnectionStatusChanged?.(
+              'disconnected',
+              `Room code "${roomId}" is already in use. Choose a new room code.`
+            );
+            try {
+              peer.destroy();
+            } catch {}
             return;
           }
           if (err.type === 'peer-unavailable') {
@@ -458,12 +465,34 @@ export class MultiplayerClient {
     });
 
     conn.on('data', (data: any) => {
-      this.handleIncomingRawMessage(data);
+      this.handleIncomingRawMessage(data, conn.peer);
     });
 
     conn.on('close', () => {
       this.reliableConnections.delete(conn.peer);
       this.unreliableConnections.delete(conn.peer);
+      if (this.isHost && isReliable) {
+        const playerId = this.connectionPlayerIds.get(conn.peer);
+        if (playerId) {
+          this.connectionPlayerIds.delete(conn.peer);
+          const slot = this.slots.find((candidate) => candidate.playerId === playerId);
+          if (slot) {
+            if (this.isInMatch && this.roomConfig.onClientLeave === 'end_match') {
+              this.isInMatch = false;
+              this.sendReliableMessage({
+                type: 'match_ended',
+                reason: `${slot.playerName} disconnected`,
+              });
+            } else {
+              slot.playerId = null;
+              slot.isBot = true;
+              slot.isReady = true;
+              slot.playerName = `${slot.appearance.name} (Bot)`;
+              this.broadcastLobbyState();
+            }
+          }
+        }
+      }
       if (!this.isHost && conn === this.hostReliableConn) {
         this.callbacks.onHostDisconnected?.();
         this.callbacks.onConnectionStatusChanged?.('disconnected', 'Host disconnected');
@@ -519,22 +548,27 @@ export class MultiplayerClient {
   /**
    * Send reliable message (Lobby, Events, Rules, Start)
    */
-  public sendReliableMessage(msg: any) {
+  public sendReliableMessage(msg: any, targetPeer?: string) {
     if (this.simulatedPacketLossRate > 0 && Math.random() < this.simulatedPacketLossRate) {
       return;
     }
 
     const deliver = () => {
-      if (this.broadcastChannel) {
+      if (!targetPeer && this.broadcastChannel) {
         try {
           this.broadcastChannel.postMessage(msg);
         } catch {}
       }
 
       if (this.isHost) {
-        this.reliableConnections.forEach((conn) => {
-          if (conn.open) conn.send(msg);
-        });
+        if (targetPeer) {
+          const conn = this.reliableConnections.get(targetPeer);
+          if (conn?.open) conn.send(msg);
+        } else {
+          this.reliableConnections.forEach((conn) => {
+            if (conn.open) conn.send(msg);
+          });
+        }
       } else if (this.hostReliableConn && this.hostReliableConn.open) {
         this.hostReliableConn.send(msg);
       }
@@ -592,7 +626,7 @@ export class MultiplayerClient {
   /**
    * Main incoming message dispatcher (handles binary buffers and JSON)
    */
-  private handleIncomingRawMessage(data: any) {
+  private handleIncomingRawMessage(data: any, sourcePeer?: string) {
     this.lastPacketReceivedTime = Date.now();
 
     // 1. Check for binary packet (ArrayBuffer or Uint8Array)
@@ -636,7 +670,7 @@ export class MultiplayerClient {
     switch (data.type) {
       case 'request_join': {
         if (!this.isHost) return;
-        this.handleClientJoinRequest(data.playerId, data.appearance);
+        this.handleClientJoinRequest(data.playerId, data.appearance, sourcePeer);
         break;
       }
       case 'join_response': {
@@ -779,7 +813,18 @@ export class MultiplayerClient {
   /**
    * Process client join request on Host
    */
-  private handleClientJoinRequest(playerId: string, appearance: PlayerAppearance) {
+  private handleClientJoinRequest(
+    playerId: string,
+    appearance: PlayerAppearance,
+    sourcePeer?: string
+  ) {
+    if (this.joinRequestIds.has(playerId)) {
+      if (sourcePeer && !this.connectionPlayerIds.has(sourcePeer)) {
+        this.connectionPlayerIds.set(sourcePeer, playerId);
+      }
+      return;
+    }
+    this.joinRequestIds.add(playerId);
     // If room is already in an active match, check config
     if (this.isInMatch) {
       this.sendReliableMessage({
@@ -813,6 +858,8 @@ export class MultiplayerClient {
       emptySlot.isReady = false;
       emptySlot.isHost = false;
 
+      if (sourcePeer) this.connectionPlayerIds.set(sourcePeer, playerId);
+
       // Send direct confirmation
       this.sendReliableMessage({
         type: 'join_response',
@@ -820,7 +867,7 @@ export class MultiplayerClient {
         assignedSlot: emptySlot.slot,
         config: this.roomConfig,
         slots: this.slots,
-      });
+      }, sourcePeer);
     }
 
     this.broadcastLobbyState();
@@ -1113,8 +1160,10 @@ export class MultiplayerClient {
     return {
       snapshotRateHz: this.currentSnapshotRateHz,
       packetLossPercent: this.currentPacketLossPercent,
-      bufferHealthMs: Math.round(this.adaptiveDelayMs),
-      transport: this.broadcastChannel ? 'BroadcastChannel (Local Tab)' : 'WebRTC Dual-Channel (Reliable + Unreliable UDP)',
+      bufferHealthMs: Math.round(this.adaptiveBufferDelayMs),
+      transport: this.peer
+        ? 'WebRTC Dual-Channel (Reliable + Unreliable)'
+        : 'BroadcastChannel (Local Tab)',
     };
   }
 
@@ -1131,6 +1180,8 @@ export class MultiplayerClient {
     this.unreliableConnections.forEach((conn) => conn.close());
     this.reliableConnections.clear();
     this.unreliableConnections.clear();
+    this.connectionPlayerIds.clear();
+    this.joinRequestIds.clear();
 
     if (this.broadcastChannel) {
       try {
@@ -1147,6 +1198,7 @@ export class MultiplayerClient {
     }
 
     this.isConnected = false;
+    this.isHost = false;
     this.isInMatch = false;
     this.snapshotBuffer = [];
     this.currentRoomId = null;

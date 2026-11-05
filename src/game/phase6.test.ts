@@ -6,6 +6,7 @@ import {
   CompactSnapshot,
   q,
 } from './multiplayer';
+import { decodeBinarySnapshot } from './netcodeBinary';
 import { DEFAULT_APPEARANCE, PlayerState, BallState, ScoreState } from './types';
 import { createInitialBall } from './physics';
 import { createInitialScoreState } from './rules';
@@ -83,17 +84,17 @@ test('Phase 6 - Netcode: Compact Snapshot encodes state with minimal payload', (
 
   const score: ScoreState = createInitialScoreState('south', '1_set', false);
 
-  let capturedMsg: any = null;
-  // Monkey-patch sendTransportMessage to capture snapshot
-  (host as any).sendTransportMessage = (msg: any) => {
-    capturedMsg = msg;
+  let capturedBinary: Uint8Array | null = null;
+  // Capture the binary hot-path packet instead of the removed JSON snapshot path.
+  (host as any).sendUnreliablePacket = (payload: Uint8Array) => {
+    capturedBinary = payload;
   };
 
   host.broadcastSnapshot(ball, [p1, p2], score);
 
-  assert.ok(capturedMsg, 'Snapshot message must be generated');
-  assert.strictEqual(capturedMsg.type, 'world_snapshot');
-  const snap: CompactSnapshot = capturedMsg.snapshot;
+  assert.ok(capturedBinary, 'Binary snapshot packet must be generated');
+  const snap = decodeBinarySnapshot(capturedBinary!);
+  assert.ok(snap, 'Binary snapshot must decode');
 
   assert.strictEqual(snap.b[0], 1.23, 'Ball X quantized');
   assert.strictEqual(snap.b[1], 0.89, 'Ball Y quantized');
@@ -141,6 +142,7 @@ test('Phase 6 - Netcode: Interpolation buffer smooths player positions and avoid
   // Ball smoothing check: never snaps instantly to new target
   const currentBall = { x: 0, y: 1.0, z: 0.5 };
   const smoothed = client.getSmoothedBall(currentBall, 0.016);
+  assert.ok(smoothed, 'Ball smoothing should return a position');
   assert.ok(smoothed.z > 0.5 && smoothed.z < 1.0, 'Ball smoothly glides towards target without teleporting');
 
   client.disconnect();
