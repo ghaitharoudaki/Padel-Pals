@@ -124,6 +124,8 @@ export class MultiplayerClient {
   private heartbeatInterval: any = null;
   private watchdogInterval: any = null;
   private joinTimeoutTimer: any = null;
+  private connectionRetryTimer: any = null;
+  private connectionRetryCount = 0;
   private lastPacketReceivedTime: number = Date.now();
   private hasEstablishedConnection = false;
   private hasJoinedRoom = false;
@@ -306,15 +308,15 @@ export class MultiplayerClient {
     this.isInMatch = false;
     this.callbacks.onConnectionStatusChanged?.('connecting');
 
-    // 6-second timeout watchdog for invalid room code or network blocks
+    // Allow signaling and ICE negotiation time to complete on slower networks.
     this.joinTimeoutTimer = setTimeout(() => {
       if (!this.isConnected) {
         this.callbacks.onConnectionStatusChanged?.(
           'disconnected',
-          `Could not connect to room "${cleanCode}". The room code may be incorrect or peer-to-peer is blocked by the network.`
+          `Could not connect to room "${cleanCode}" after several attempts. Verify the code and make sure both browsers allow WebRTC connections.`
         );
       }
-    }, 6000);
+    }, 20000);
 
     this.initTransports(false, this.currentRoomId, appearance);
   }
@@ -370,24 +372,7 @@ export class MultiplayerClient {
             this.callbacks.onConnectionStatusChanged?.('connected');
             this.broadcastLobbyState();
           } else {
-            // Client connects two data channels to the host:
-            // 1. Reliable ordered channel for lobby and match events
-            const hostPeerId = `padelpals-${roomId.toLowerCase()}`;
-            const relConn = peer.connect(hostPeerId, { reliable: true, label: 'reliable' });
-            this.setupConnection(relConn, appearance, true);
-            this.hostReliableConn = relConn;
-
-            // 2. Unreliable unordered channel for high-frequency binary inputs and snapshots
-            const unrelConn = peer.connect(hostPeerId, {
-              reliable: false,
-              ordered: false,
-              label: 'unreliable',
-            });
-            this.setupConnection(unrelConn, appearance, false);
-            this.hostUnreliableConn = unrelConn;
-
-            // Send join request
-            this.sendJoinRequest(appearance);
+            this.connectToHost(peer, roomId, appearance);
           }
         });
 
@@ -409,12 +394,21 @@ export class MultiplayerClient {
             return;
           }
           if (err.type === 'peer-unavailable') {
-            this.callbacks.onConnectionStatusChanged?.(
-              'disconnected',
-              `Room "${roomId}" not found. Verify the room code.`
-            );
+            if (!asHost) {
+              this.callbacks.onConnectionStatusChanged?.(
+                'reconnecting',
+                `Room "${roomId}" is not online yet. Retrying the host connection...`
+              );
+              this.scheduleHostRetry(roomId, appearance);
+            } else {
+              this.callbacks.onConnectionStatusChanged?.(
+                'disconnected',
+                `Room "${roomId}" not found. Verify the room code.`
+              );
+            }
             return;
           }
+
           this.callbacks.onConnectionStatusChanged?.(
             'disconnected',
             `Peer connection failed (${err.type || 'unknown error'}). Check the network or firewall and try again.`
@@ -444,6 +438,34 @@ export class MultiplayerClient {
     }
 
     this.startHeartbeat();
+  }
+
+  private connectToHost(peer: Peer, roomId: string, appearance: PlayerAppearance) {
+    const hostPeerId = `padelpals-${roomId.toLowerCase()}`;
+    const relConn = peer.connect(hostPeerId, { reliable: true, label: 'reliable' });
+    this.hostReliableConn = relConn;
+    this.setupConnection(relConn, appearance, true);
+
+    relConn.on('open', () => {
+      if (this.hostUnreliableConn || !this.peer) return;
+      const unrelConn = this.peer.connect(hostPeerId, {
+        reliable: false,
+        label: 'unreliable',
+      });
+      this.hostUnreliableConn = unrelConn;
+      this.setupConnection(unrelConn, appearance, false);
+    });
+  }
+
+  private scheduleHostRetry(roomId: string, appearance: PlayerAppearance) {
+    if (this.connectionRetryTimer || this.connectionRetryCount >= 12 || !this.peer) return;
+    this.connectionRetryCount++;
+    this.connectionRetryTimer = setTimeout(() => {
+      this.connectionRetryTimer = null;
+      if (!this.isConnected && this.peer) {
+        this.connectToHost(this.peer, roomId, appearance);
+      }
+    }, 1000);
   }
 
   private setupConnection(conn: DataConnection, appearance: PlayerAppearance, isReliable: boolean) {
@@ -707,6 +729,9 @@ export class MultiplayerClient {
       case 'join_response': {
         if (data.accepted) {
           if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
+          if (this.connectionRetryTimer) clearTimeout(this.connectionRetryTimer);
+          this.connectionRetryTimer = null;
+          this.connectionRetryCount = 0;
           this.hasJoinedRoom = true;
           this.isConnected = true;
           this.lastPacketReceivedTime = Date.now();
@@ -727,6 +752,7 @@ export class MultiplayerClient {
       }
       case 'lobby_state': {
         if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
+        if (this.connectionRetryTimer) clearTimeout(this.connectionRetryTimer);
         if (data.config) this.roomConfig = data.config;
         this.slots = data.slots;
 
@@ -1238,6 +1264,8 @@ export class MultiplayerClient {
     this.isInMatch = false;
     this.hasEstablishedConnection = false;
     this.hasJoinedRoom = false;
+    this.connectionRetryTimer = null;
+    this.connectionRetryCount = 0;
     this.snapshotBuffer = [];
     this.currentRoomId = null;
     this.callbacks.onConnectionStatusChanged?.('disconnected');
