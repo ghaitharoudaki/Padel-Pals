@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { padelAudio } from '../game/audio';
 
 interface CountdownOverlayProps {
@@ -16,6 +16,11 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
 }) => {
   const [count, setCount] = useState<number>(3);
   const [text, setText] = useState<string>('3');
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   useEffect(() => {
     padelAudio.playHoverTick();
@@ -39,10 +44,10 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
         }
       }
 
-      if (elapsed >= 3800) {
+      if (elapsed >= 3600) {
         if (!completed) {
           completed = true;
-          onComplete();
+          onCompleteRef.current();
         }
         return;
       }
@@ -51,7 +56,7 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [onComplete]);
+  }, []);
 
   return (
     <div className="absolute inset-0 z-50 pointer-events-none flex flex-col items-center justify-center select-none font-sans bg-slate-950/20">

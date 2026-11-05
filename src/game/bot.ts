@@ -101,12 +101,21 @@ export function updateBotAI(
   const isSouth = bot.side === 'south';
 
   // Court lateral boundary for doubles
-  const minX = -4.4;
-  const maxX = 4.4;
+  let minX = -4.4;
+  let maxX = 4.4;
   let homeX = 0;
 
   if (isDoubles) {
-    homeX = bot.zone === 'left' ? -2.2 : 2.2;
+    const isBotRight = bot.zone === 'right' || bot.slot === 3 || bot.slot === 4;
+    homeX = isBotRight ? 2.2 : -2.2;
+    // Strict lane limit: A doubles bot MUST NOT cross over into partner's side!
+    if (isBotRight) {
+      minX = 0.2; // Right-lane bot stays at X >= 0.2
+      maxX = 4.4;
+    } else {
+      minX = -4.4;
+      maxX = -0.2; // Left-lane bot stays at X <= -0.2
+    }
   }
 
   // Tactical baseline home depth
@@ -159,16 +168,31 @@ export function updateBotAI(
     ball.lastHitter !== bot.side &&
     (isSouth ? ball.velocity.z > 0.2 : ball.velocity.z < -0.2);
 
-  // 3. DOUBLES COURT COVERAGE & PARTNER SPACING
+  // 3. DOUBLES COURT COVERAGE & PARTNER SPACING (Never interfere with human player)
   let isMyBall = true;
   if (isDoubles && teammate) {
-    const mateDist = Math.hypot(ball.position.x - teammate.position.x, ball.position.z - teammate.position.z);
-    const myDist = Math.hypot(ball.position.x - bot.position.x, ball.position.z - bot.position.z);
+    const landing = predictBallLanding(ball);
+    const isBotRight = bot.zone === 'right' || homeX > 0;
+    const isTeammateHuman = !teammate.isBot;
 
-    const teammateTaking =
-      teammate.role !== 'human' || teammate.isSwinging || Math.hypot(teammate.velocity.x, teammate.velocity.z) > 0.2;
-    if (teammateTaking && mateDist < myDist - 1.2 && mateDist < 3.2) {
-      isMyBall = false;
+    // Check if the ball is landing on or heading to teammate's side
+    const ballOnTeammateSide = isBotRight ? landing.x < 0.25 : landing.x > -0.25;
+    const ballPosOnTeammateSide = isBotRight ? ball.position.x < 0.25 : ball.position.x > -0.25;
+
+    const mateDistToLanding = Math.hypot(landing.x - teammate.position.x, landing.z - teammate.position.z);
+    const myDistToLanding = Math.hypot(landing.x - bot.position.x, landing.z - bot.position.z);
+
+    if (isTeammateHuman) {
+      // RULE: Do NOT interfere with a ball coming the human's way!
+      // If the ball is on the human's half, heading to the human's half, or the human is within reach:
+      if (ballOnTeammateSide || ballPosOnTeammateSide || mateDistToLanding <= myDistToLanding + 1.2) {
+        isMyBall = false;
+      }
+    } else {
+      // Bot-Bot partner lane division
+      if (ballOnTeammateSide && mateDistToLanding < myDistToLanding + 0.5) {
+        isMyBall = false;
+      }
     }
   }
 
@@ -289,8 +313,9 @@ export function updateBotAI(
         }
       }
     } else {
-      // Supporting partner
-      stateDesc = 'Supporting Partner';
+      // Supporting partner / Yielding to player
+      stateDesc = teammate && !teammate.isBot ? 'Yielding to Player' : 'Supporting Partner';
+      wantsToSwing = false;
       const mateZ = teammate ? teammate.position.z : homeZ;
       const supportZ = isSouth ? (mateZ < 4.5 ? 7.2 : 5.8) : (mateZ > -4.5 ? -7.2 : -5.8);
 
@@ -309,6 +334,9 @@ export function updateBotAI(
       z: isSouth ? 6.5 : -6.5,
     };
   }
+
+  // Ensure bot target position strictly stays within lateral boundaries
+  targetPos.x = Math.max(minX, Math.min(maxX, targetPos.x));
 
   // Movement velocity towards target position
   const diffX = targetPos.x - bot.position.x;

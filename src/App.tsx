@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import {
   AimAssist,
@@ -1244,13 +1244,16 @@ export default function App() {
             sparkGeo.attributes.position.needsUpdate = true;
           }
 
+          const isMatchActive = currentScreen === 'PLAYING';
+
           // Ball Visuals
-          const renderedBallPosition = interpolatePosition(
-            previousBallPosition,
-            ballRef.current.position,
-            alpha
-          );
+          const renderedBallPosition = isMatchActive
+            ? interpolatePosition(previousBallPosition, ballRef.current.position, alpha)
+            : { ...ballRef.current.position };
           ballMesh.position.set(renderedBallPosition.x, renderedBallPosition.y, renderedBallPosition.z);
+          if (!isMatchActive) {
+            previousBallPosition = { ...ballRef.current.position };
+          }
 
           const trail = ballRef.current.trail;
           for (let i = 0; i < trail.length && i < maxTrailPoints; i++) {
@@ -1361,18 +1364,27 @@ export default function App() {
               const avatar = avatars[player.id];
               const isVisible = player.id === 'p1' || player.id === 'p2' || isDoubles;
               avatar.setVisible(isVisible);
-              const renderedPosition = interpolatePosition(previousPositions[player.id], player.position, alpha);
-              avatar.group.position.set(renderedPosition.x, renderedPosition.y, renderedPosition.z);
+              if (!isMatchActive) {
+                previousPositions[player.id] = { ...player.position };
+                avatar.group.position.set(player.position.x, player.position.y, player.position.z);
+              } else {
+                const renderedPosition = interpolatePosition(previousPositions[player.id], player.position, alpha);
+                avatar.group.position.set(renderedPosition.x, renderedPosition.y, renderedPosition.z);
+              }
             });
 
             // P1 Avatar
-            const p1TargetAngle = Math.atan2(
-              mouseAimRef.current.x - p1.position.x,
-              mouseAimRef.current.z - p1.position.z
-            );
+            const p1TargetAngle = isMatchActive
+              ? Math.atan2(
+                  mouseAimRef.current.x - p1.position.x,
+                  mouseAimRef.current.z - p1.position.z
+                )
+              : p1.side === 'south'
+              ? Math.PI
+              : 0;
             p1Avatar.updateKinematics(
               dt,
-              p1.velocity,
+              isMatchActive ? p1.velocity : { x: 0, z: 0 },
               p1.racketSwingProgress,
               p1.isSwinging,
               currentShotRef.current,
@@ -1382,13 +1394,17 @@ export default function App() {
             );
 
             // P2 Avatar (Opponent Bot)
-            const p2TargetAngle = Math.atan2(
-              p1.position.x - p2.position.x,
-              p1.position.z - p2.position.z
-            );
+            const p2TargetAngle = isMatchActive
+              ? Math.atan2(
+                  p1.position.x - p2.position.x,
+                  p1.position.z - p2.position.z
+                )
+              : p2.side === 'south'
+              ? Math.PI
+              : 0;
             p2Avatar.updateKinematics(
               dt,
-              p2.velocity,
+              isMatchActive ? p2.velocity : { x: 0, z: 0 },
               p2.racketSwingProgress,
               p2.isSwinging,
               p2.currentShotType,
@@ -1399,13 +1415,17 @@ export default function App() {
 
             // P3 Avatar (Teammate Bot)
             if (isDoubles) {
-              const p3TargetAngle = Math.atan2(
-                ballRef.current.position.x - p3.position.x,
-                ballRef.current.position.z - p3.position.z
-              );
+              const p3TargetAngle = isMatchActive
+                ? Math.atan2(
+                    ballRef.current.position.x - p3.position.x,
+                    ballRef.current.position.z - p3.position.z
+                  )
+                : p3.side === 'south'
+                ? Math.PI
+                : 0;
               p3Avatar.updateKinematics(
                 dt,
-                p3.velocity,
+                isMatchActive ? p3.velocity : { x: 0, z: 0 },
                 p3.racketSwingProgress,
                 p3.isSwinging,
                 p3.currentShotType,
@@ -1415,13 +1435,17 @@ export default function App() {
               );
 
               // P4 Avatar (Opponent Partner)
-              const p4TargetAngle = Math.atan2(
-                p3.position.x - p4.position.x,
-                p3.position.z - p4.position.z
-              );
+              const p4TargetAngle = isMatchActive
+                ? Math.atan2(
+                    p3.position.x - p4.position.x,
+                    p3.position.z - p4.position.z
+                  )
+                : p4.side === 'south'
+                ? Math.PI
+                : 0;
               p4Avatar.updateKinematics(
                 dt,
-                p4.velocity,
+                isMatchActive ? p4.velocity : { x: 0, z: 0 },
                 p4.racketSwingProgress,
                 p4.isSwinging,
                 p4.currentShotType,
@@ -1777,21 +1801,24 @@ export default function App() {
       cameraControllerRef.current?.startPlayPushIn(() => {
         cameraControllerRef.current?.snapToMatchPreset();
         setScreenState('COUNTDOWN');
+        screenStateRef.current = 'COUNTDOWN';
         setIsMatchTransitioning(false);
         isStartingMatchRef.current = false;
       });
     } else {
       cameraControllerRef.current?.snapToMatchPreset();
       setScreenState('COUNTDOWN');
+      screenStateRef.current = 'COUNTDOWN';
       isStartingMatchRef.current = false;
     }
   };
 
-  const handleCountdownComplete = () => {
+  const handleCountdownComplete = useCallback(() => {
     isStartingMatchRef.current = false;
     setScreenState('PLAYING');
+    screenStateRef.current = 'PLAYING';
     padelAudio.playRefereeWhistle('start');
-  };
+  }, []);
 
   const quitToMenu = () => {
     isStartingMatchRef.current = false;

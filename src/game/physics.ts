@@ -1,4 +1,4 @@
-﻿import {
+import {
   AimAssist,
   BallState,
   COURT_CONFIG,
@@ -511,10 +511,11 @@ export function evaluateContactQuality(
 }
 
 /**
- * Strike ball with racket incorporating:
- * - Direction from movement input held at hit time (auto-aim)
- * - Timing quality adjustments (pulled if early, weak if late, laser if perfect)
- * - Shot modifiers: lob, drop, smash, bajada, topspin, slice, flat
+ * Strike ball with racket:
+ * - Solves trajectory with aerodynamic drag compensation and 2-pass landing refinement
+ * - Guarantees the ball lands and bounces precisely on the target spot marked by the reticle
+ * - Ensures safe net clearance (>1.04m above floor) for all standard shots crossing the net
+ * - Zero lateral spin (spinY = 0) to prevent unwanted sideways curve drift
  */
 export function strikeBallWithRacket(
   ball: BallState,
@@ -527,28 +528,29 @@ export function strikeBallWithRacket(
   timingQuality: HitQuality = 'GOOD',
   aimAssist: AimAssist = 'high'
 ): BallState {
-  let aimX = targetAim.x;
-  let aimZ = targetAim.z;
+  let aimX = targetAim ? targetAim.x : 0;
+  let aimZ = targetAim ? targetAim.z : (playerSide === 'south' ? -7.5 : 7.5);
 
-  // Auto-aim direction from movement input held at hit time
-  if (directionalBias) {
-    aimX += directionalBias.x * (aimAssist === 'high' ? 1.4 : 2.5);
-    aimZ += directionalBias.z * (aimAssist === 'high' ? 1.2 : 2.2) * (playerSide === 'south' ? -1 : 1);
+  // If directional bias is provided without explicit targetAim coordinates
+  if (directionalBias && (!targetAim || (targetAim.x === 0 && targetAim.z === 0))) {
+    aimX += directionalBias.x;
+    aimZ += directionalBias.z * (playerSide === 'south' ? -1 : 1);
   }
 
-  // Timing quality modifications
-  if (timingQuality === 'EARLY') {
-    aimX += (playerSide === 'south' ? -0.4 : 0.4);
-  } else if (timingQuality === 'LATE') {
-    aimX += (playerSide === 'south' ? 0.4 : -0.4);
-    aimZ *= 0.90; // slightly shallower depth
+  // Timing quality minor deflection: subtle enough not to miss the intended zone
+  if (aimAssist !== 'high') {
+    if (timingQuality === 'EARLY') {
+      aimX += (playerSide === 'south' ? -0.25 : 0.25);
+    } else if (timingQuality === 'LATE') {
+      aimX += (playerSide === 'south' ? 0.25 : -0.25);
+      aimZ *= 0.94;
+    }
   }
 
-  // Strong Aim Assist boundary clamping:
-  // Under 'high': safely inside side lines and baseline, preventing accidental out-of-bounds shots
-  const clampX = aimAssist === 'high' ? 4.1 : aimAssist === 'medium' ? 4.4 : 4.7;
-  const clampZNear = aimAssist === 'high' ? 1.8 : aimAssist === 'medium' ? 1.4 : 1.0;
-  const clampZFar = aimAssist === 'high' ? 8.8 : aimAssist === 'medium' ? 9.2 : 9.6;
+  // Legal court boundary clamps
+  const clampX = aimAssist === 'high' ? 4.2 : 4.5;
+  const clampZNear = 1.6;
+  const clampZFar = aimAssist === 'high' ? 9.0 : 9.5;
 
   aimX = Math.max(-clampX, Math.min(clampX, aimX));
   if (playerSide === 'south') {
@@ -557,110 +559,128 @@ export function strikeBallWithRacket(
     aimZ = Math.max(clampZNear, Math.min(clampZFar, aimZ));
   }
 
-  const dx = aimX - ball.position.x;
-  const dz = aimZ - ball.position.z;
+  const startX = ball.position.x;
+  const startY = Math.max(0.15, ball.position.y);
+  const startZ = ball.position.z;
+
+  const dx = aimX - startX;
+  const dz = aimZ - startZ;
   const dist = Math.hypot(dx, dz);
 
-  // Speed and trajectory tuned for arcade yet realistic padel feel
-  const effectivePower = Math.min(1.0, power * (timingQuality === 'PERFECT' ? 1.25 : 1.0));
-  const baseSpeed = 8.5 + effectivePower * 5.0;
-  let speed = baseSpeed;
-  let vy = 4.6 + effectivePower * 1.5;
+  const effectivePower = Math.min(1.0, power * (timingQuality === 'PERFECT' ? 1.15 : 1.0));
+
+  // Determine base flight time and speed profile per shot type
   let spinX = 0;
-  let spinY = (aimX - playerPos.x) * 1.8;
+  let flightTime = 0.8;
 
   switch (shotType) {
-    case 'smash':
-      // Steep downward spike
-      speed = baseSpeed * 1.55;
-      vy = ball.position.y > 1.6 ? -1.0 - effectivePower * 1.8 : 0.8;
+    case 'smash': {
+      const smashSpeed = 19.0 + effectivePower * 4.5;
+      flightTime = Math.max(0.35, dist / smashSpeed);
+      spinX = 18;
+      break;
+    }
+    case 'lob': {
+      flightTime = 1.40 + (dist / 14.0) * 0.35;
+      spinX = -12;
+      break;
+    }
+    case 'drop': {
+      const dropSpeed = 9.0 + effectivePower * 2.2;
+      flightTime = Math.max(0.5, dist / dropSpeed);
+      spinX = -18;
+      break;
+    }
+    case 'bajada': {
+      const bajadaSpeed = 16.0 + effectivePower * 3.5;
+      flightTime = Math.max(0.4, dist / bajadaSpeed);
+      spinX = 20;
+      break;
+    }
+    case 'topspin': {
+      const topSpeed = 14.0 + effectivePower * 3.0;
+      flightTime = Math.max(0.45, dist / topSpeed);
       spinX = 22;
       break;
-
-    case 'lob':
-      // High defensive lob landing deep in back 2m
-      speed = baseSpeed * 0.78;
-      vy = 10.5 + effectivePower * 2.2;
-      spinX = -16;
+    }
+    case 'slice': {
+      const sliceSpeed = 13.5 + effectivePower * 2.5;
+      flightTime = Math.max(0.45, dist / sliceSpeed);
+      spinX = -20;
       break;
-
-    case 'drop':
-      // Soft touch drop: lands short near net
-      speed = baseSpeed * 0.52;
-      vy = 4.4;
-      spinX = -26;
-      break;
-
-    case 'bajada':
-      // Aggressive downward wall-return drive after rebounding off back glass
-      speed = baseSpeed * 1.35;
-      vy = -0.5 - effectivePower * 1.0;
-      spinX = 26;
-      break;
-
-    case 'slice':
-      // Bandeja / Vibora slice: low-skimming, checks off back glass
-      speed = baseSpeed * 1.08;
-      vy = 4.2 + effectivePower * 0.8;
-      spinX = -32;
-      break;
-
-    case 'topspin':
-      // Dips sharply into baseline
-      speed = baseSpeed * 1.18;
-      vy = 4.9 + effectivePower * 1.2;
-      spinX = 34;
-      break;
-
+    }
     case 'flat':
-    default:
-      speed = baseSpeed * 1.05;
-      vy = 4.6 + effectivePower * 1.0;
-      spinX = 8;
+    default: {
+      const flatSpeed = 13.0 + effectivePower * 3.0;
+      flightTime = Math.max(0.45, dist / flatSpeed);
+      spinX = 4;
       break;
-  }
-
-  // Late reach reduces speed
-  if (timingQuality === 'LATE') {
-    speed *= 0.85;
-    vy *= 0.92;
-  }
-
-  // AIM ASSIST: Automatically adjust launch arc so shots clear the net
-  // Distance to net line Z=0
-  const distToNet = Math.abs(ball.position.z);
-  if (distToNet > 0.4 && shotType !== 'smash' && aimAssist !== 'low') {
-    const netClearanceHeight = aimAssist === 'high' ? 1.02 : 0.95;
-    const estTimeNet = distToNet / Math.max(5.0, speed * 0.75);
-    const heightAtNet = ball.position.y + vy * estTimeNet - 0.5 * GRAVITY * estTimeNet * estTimeNet;
-    if (heightAtNet < netClearanceHeight) {
-      vy = (netClearanceHeight - ball.position.y + 0.5 * GRAVITY * estTimeNet * estTimeNet) / estTimeNet;
     }
   }
 
-  // Prevent accidental out-of-bounds in high aim assist mode
-  // Only power smashes with late reach/timing can go out
-  const isRiskyShot = shotType === 'smash' && effectivePower > 0.90 && (timingQuality === 'LATE' || timingQuality === 'OUT_OF_REACH');
-  if (aimAssist === 'high' && !isRiskyShot) {
-    speed = Math.min(speed, 19.5);
+  // Vertical velocity vy to reach BALL_RADIUS (0.033) at t = flightTime
+  const targetFloorY = BALL_RADIUS;
+  let vy = (targetFloorY - startY + 0.5 * GRAVITY * flightTime * flightTime) / flightTime;
+
+  // Safe Net Clearance: Net is at Z=0, height 0.92m
+  const crossesNet = (startZ > 0 && aimZ < 0) || (startZ < 0 && aimZ > 0);
+  if (crossesNet && dist > 0.5 && shotType !== 'smash') {
+    const fracToNet = Math.abs(startZ) / (Math.abs(startZ) + Math.abs(aimZ));
+    const tNet = flightTime * fracToNet;
+    const estHeightAtNet = startY + vy * tNet - 0.5 * GRAVITY * tNet * tNet;
+    const minNetHeight = 1.05; // 13cm clearance over 0.92m padel net
+    if (estHeightAtNet < minNetHeight && tNet > 0.05) {
+      vy = (minNetHeight - startY + 0.5 * GRAVITY * tNet * tNet) / tNet;
+      // Recalculate flight time with new launch angle
+      const discr = vy * vy + 2 * GRAVITY * (startY - targetFloorY);
+      if (discr >= 0) {
+        flightTime = (vy + Math.sqrt(discr)) / GRAVITY;
+      }
+    }
   }
 
+  // Horizontal trajectory with air drag compensation
   const dirX = dist > 0.01 ? dx / dist : 0;
   const dirZ = dist > 0.01 ? dz / dist : (playerSide === 'south' ? -1 : 1);
 
-  const vx = dirX * speed;
-  const vz = dirZ * speed;
-  const flightTime = dist / Math.max(speed, 5.0);
-  if (shotType !== 'smash' && flightTime > 0.05) {
-    // Solve the vertical component for the selected ground target instead of
-    // relying on a generic arc. This keeps the landing point under the cursor.
-    vy = (0.12 - ball.position.y + 0.5 * GRAVITY * flightTime * flightTime) / flightTime;
+  // Aerodynamic drag empirical compensation factor
+  const dragFactor = 1.0 + 0.0075 * dist + 0.00015 * dist * dist;
+  let vx = dirX * (dist / flightTime) * dragFactor;
+  let vz = dirZ * (dist / flightTime) * dragFactor;
+
+  // 2-Pass Precision Refinement using predictBallLanding
+  const dummyBall: BallState = {
+    ...ball,
+    position: { x: startX, y: startY, z: startZ },
+    velocity: { x: vx, y: vy, z: vz },
+    spin: { x: spinX, y: 0, z: 0 },
+    inPlay: true,
+  };
+
+  const pred1 = predictBallLanding(dummyBall);
+  const errX1 = aimX - pred1.x;
+  const errZ1 = aimZ - pred1.z;
+  const errDist1 = Math.hypot(errX1, errZ1);
+
+  if (errDist1 > 0.04 && pred1.timeToBounce > 0.1) {
+    vx += errX1 / pred1.timeToBounce;
+    vz += errZ1 / pred1.timeToBounce;
+    dummyBall.velocity.x = vx;
+    dummyBall.velocity.z = vz;
+
+    const pred2 = predictBallLanding(dummyBall);
+    const errX2 = aimX - pred2.x;
+    const errZ2 = aimZ - pred2.z;
+    if (Math.hypot(errX2, errZ2) > 0.04 && pred2.timeToBounce > 0.1) {
+      vx += errX2 / pred2.timeToBounce;
+      vz += errZ2 / pred2.timeToBounce;
+    }
   }
 
   return {
     ...ball,
     velocity: { x: vx, y: vy, z: vz },
-    spin: { x: spinX, y: spinY, z: 0 },
+    spin: { x: spinX, y: 0, z: 0 }, // Clean in-line flight without sideways curve drift
     lastHitter: playerSide,
     bounceCount: 0,
     bouncesOnSide: { south: 0, north: 0 },

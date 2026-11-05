@@ -1,4 +1,4 @@
-﻿import * as THREE from 'three';
+import * as THREE from 'three';
 import { AimTargetZone, HitQuality, ShotType, Vector3D } from './types';
 
 export interface SwingIntent {
@@ -186,12 +186,13 @@ export class InputManager {
   public triggerHit(power: number, forceShot?: ShotType) {
     if (!this.isEnabled) return;
     const zone = this.getTargetZone();
-    const targetAim = AIM_ZONES[zone];
+    // Use currentAim coordinates so the shot target matches the visual floor reticle exactly
+    const targetAim = { ...this.currentAim };
 
     const intent: SwingIntent = {
       shot: forceShot || 'flat',
       power,
-      bias: { x: targetAim.x * 0.4, z: targetAim.z * 0.2 },
+      bias: { x: 0, z: 0 },
       targetZone: zone,
       targetAim,
       isJumpHit: false,

@@ -42,8 +42,8 @@ test('Phase 6 - Netcode: Host Room Creation initializes 4 slots and syncs appear
   assert.strictEqual(client.slots[0].playerName, DEFAULT_APPEARANCE.name);
 
   // Other slots initialized as bots
-  assert.strictEqual(client.slots[1].team, 'blue');
-  assert.strictEqual(client.slots[2].team, 'red');
+  assert.strictEqual(client.slots[1].team, 'red');
+  assert.strictEqual(client.slots[2].team, 'blue');
   assert.strictEqual(client.slots[3].team, 'red');
 
   client.disconnect();
