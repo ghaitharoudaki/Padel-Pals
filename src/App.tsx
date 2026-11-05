@@ -1798,6 +1798,8 @@ export default function App() {
           if (status === 'connected') {
             setIsNetConnected(true);
             setNetErrorMessage(null);
+          } else if (status === 'disconnected' || status === 'reconnecting') {
+            setIsNetConnected(false);
           }
         },
       });

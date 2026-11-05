@@ -125,6 +125,8 @@ export class MultiplayerClient {
   private watchdogInterval: any = null;
   private joinTimeoutTimer: any = null;
   private lastPacketReceivedTime: number = Date.now();
+  private hasEstablishedConnection = false;
+  private hasJoinedRoom = false;
 
   // Clock Synchronization (5-sample median offset)
   private clockOffsets: number[] = [];
@@ -360,11 +362,12 @@ export class MultiplayerClient {
         this.peer = peer;
 
         peer.on('open', () => {
-          this.isConnected = true;
-          if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
-          this.callbacks.onConnectionStatusChanged?.('connected');
-
           if (asHost) {
+            this.isConnected = true;
+            this.hasEstablishedConnection = true;
+            this.lastPacketReceivedTime = Date.now();
+            if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
+            this.callbacks.onConnectionStatusChanged?.('connected');
             this.broadcastLobbyState();
           } else {
             // Client connects two data channels to the host:
@@ -384,11 +387,7 @@ export class MultiplayerClient {
             this.hostUnreliableConn = unrelConn;
 
             // Send join request
-            this.sendReliableMessage({
-              type: 'request_join',
-              playerId: this.myPlayerId,
-              appearance,
-            });
+            this.sendJoinRequest(appearance);
           }
         });
 
@@ -414,6 +413,25 @@ export class MultiplayerClient {
               'disconnected',
               `Room "${roomId}" not found. Verify the room code.`
             );
+            return;
+          }
+          this.callbacks.onConnectionStatusChanged?.(
+            'disconnected',
+            `Peer connection failed (${err.type || 'unknown error'}). Check the network or firewall and try again.`
+          );
+        });
+
+        peer.on('disconnected', () => {
+          this.hasEstablishedConnection = false;
+          this.isConnected = false;
+          this.callbacks.onConnectionStatusChanged?.('reconnecting');
+          try {
+            peer.reconnect();
+          } catch {
+            this.callbacks.onConnectionStatusChanged?.(
+              'disconnected',
+              'The signaling connection was lost. Please rejoin the room.'
+            );
           }
         });
       }
@@ -422,17 +440,7 @@ export class MultiplayerClient {
     }
 
     if (asHost) {
-      this.isConnected = true;
-      this.callbacks.onConnectionStatusChanged?.('connected');
       this.callbacks.onLobbyUpdated?.(this.slots, true, 1, this.roomConfig);
-    } else {
-      setTimeout(() => {
-        this.sendReliableMessage({
-          type: 'request_join',
-          playerId: this.myPlayerId,
-          appearance,
-        });
-      }, 50);
     }
 
     this.startHeartbeat();
@@ -440,9 +448,8 @@ export class MultiplayerClient {
 
   private setupConnection(conn: DataConnection, appearance: PlayerAppearance, isReliable: boolean) {
     conn.on('open', () => {
-      this.isConnected = true;
-      if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
-      this.callbacks.onConnectionStatusChanged?.('connected');
+      this.hasEstablishedConnection = true;
+      this.lastPacketReceivedTime = Date.now();
 
       if (isReliable) {
         this.reliableConnections.set(conn.peer, conn);
@@ -454,18 +461,27 @@ export class MultiplayerClient {
         if (isReliable) this.hostReliableConn = conn;
         else this.hostUnreliableConn = conn;
 
-        this.sendReliableMessage({
-          type: 'request_join',
-          playerId: this.myPlayerId,
-          appearance,
-        });
+        if (isReliable) this.sendJoinRequest(appearance);
       } else {
+        this.isConnected = true;
+        this.callbacks.onConnectionStatusChanged?.('connected');
         this.broadcastLobbyState();
       }
     });
 
     conn.on('data', (data: any) => {
       this.handleIncomingRawMessage(data, conn.peer);
+    });
+
+    conn.on('error', () => {
+      if (!this.isHost && conn === this.hostReliableConn) {
+        this.isConnected = false;
+        this.hasJoinedRoom = false;
+        this.callbacks.onConnectionStatusChanged?.(
+          'reconnecting',
+          'The host connection failed. Retrying...'
+        );
+      }
     });
 
     conn.on('close', () => {
@@ -494,6 +510,9 @@ export class MultiplayerClient {
         }
       }
       if (!this.isHost && conn === this.hostReliableConn) {
+        this.isConnected = false;
+        this.hasEstablishedConnection = false;
+        this.hasJoinedRoom = false;
         this.callbacks.onHostDisconnected?.();
         this.callbacks.onConnectionStatusChanged?.('disconnected', 'Host disconnected');
       }
@@ -537,12 +556,24 @@ export class MultiplayerClient {
     }, 1000);
 
     this.watchdogInterval = setInterval(() => {
-      if (!this.isConnected) return;
+      if (this.isHost || !this.isConnected || !this.hasJoinedRoom) return;
       const timeSinceLast = Date.now() - this.lastPacketReceivedTime;
       if (timeSinceLast > 3800) {
         this.callbacks.onConnectionStatusChanged?.('reconnecting');
       }
     }, 1000);
+  }
+
+  private sendJoinRequest(appearance: PlayerAppearance) {
+    const message = {
+      type: 'request_join',
+      playerId: this.myPlayerId,
+      appearance,
+    };
+
+    if (this.hostReliableConn?.open) {
+      this.hostReliableConn.send(message);
+    }
   }
 
   /**
@@ -676,6 +707,9 @@ export class MultiplayerClient {
       case 'join_response': {
         if (data.accepted) {
           if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
+          this.hasJoinedRoom = true;
+          this.isConnected = true;
+          this.lastPacketReceivedTime = Date.now();
           if (data.config) this.roomConfig = data.config;
           if (data.slots) this.slots = data.slots;
           if (data.assignedSlot) this.mySlot = data.assignedSlot;
@@ -698,6 +732,8 @@ export class MultiplayerClient {
 
         const found = this.slots.find((s) => s.playerId === this.myPlayerId);
         if (found) {
+          this.hasJoinedRoom = true;
+          this.isConnected = true;
           this.mySlot = found.slot;
           this.mySide = found.side;
         }
@@ -1200,6 +1236,8 @@ export class MultiplayerClient {
     this.isConnected = false;
     this.isHost = false;
     this.isInMatch = false;
+    this.hasEstablishedConnection = false;
+    this.hasJoinedRoom = false;
     this.snapshotBuffer = [];
     this.currentRoomId = null;
     this.callbacks.onConnectionStatusChanged?.('disconnected');

@@ -136,7 +136,24 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
           </div>
         )}
 
-        {!isConnected && !currentRoomId ? (
+        {!isConnected && currentRoomId && !isHost ? (
+          <div className="space-y-4 py-8 text-center">
+            <Wifi className="mx-auto h-10 w-10 animate-pulse text-amber-400" />
+            <h3 className="text-xl font-black uppercase text-amber-300">
+              Connecting to {currentRoomId}
+            </h3>
+            <p className="text-sm text-zinc-400">
+              Waiting for the host to accept this browser. Your player slot will appear when the
+              WebRTC connection is established.
+            </p>
+            <button
+              onClick={onLeaveRoom}
+              className="mx-auto px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-black text-sm uppercase rounded-xl border-2 border-black"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : !isConnected && !currentRoomId ? (
           /* ========================================== */
           /* ROOM SELECT / CREATE / JOIN SCREEN        */
           /* ========================================== */
