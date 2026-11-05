@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { ScoreState, ShotType, GameMode, Side } from '../game/types';
 import {
   Volume2,
@@ -28,6 +28,8 @@ interface Props {
   p2Name: string;
   pingMs?: number;
   connectionStatus?: string;
+  onlinePlayerLabel?: string;
+  onToggleNetDebug?: () => void;
   onTouchJoystick?: (x: number, z: number) => void;
   onTouchHitStart?: () => void;
   onTouchHitEnd?: () => void;
@@ -58,12 +60,15 @@ export const GameHUD: React.FC<Props> = ({
   p2Name,
   pingMs,
   connectionStatus,
+  onlinePlayerLabel,
+  onToggleNetDebug,
   onTouchJoystick,
   onTouchHitStart,
   onTouchHitEnd,
   onTouchLob,
 }) => {
   const shot = SHOT_INFO[currentShot] || SHOT_INFO.flat;
+  const isOnline = gameMode.startsWith('online');
   const [stickActive, setStickActive] = React.useState(false);
   const [stickOffset, setStickOffset] = React.useState({ x: 0, y: 0 });
   const stickBaseRef = React.useRef<HTMLDivElement>(null);
@@ -131,9 +136,10 @@ export const GameHUD: React.FC<Props> = ({
             <span className="hidden sm:inline">MENU</span>
           </button>
 
-          {gameMode === 'online' && (
-            <div
-              className={`py-1.5 px-3 rounded-xl border-3 border-slate-900 text-xs font-mono font-bold flex items-center gap-1.5 bg-slate-950 ${
+          {isOnline && (
+            <button
+              onClick={onToggleNetDebug}
+              className={`py-1.5 px-3 rounded-xl border-3 border-slate-900 text-xs font-mono font-bold flex items-center gap-1.5 bg-slate-950 transition active:scale-95 ${
                 (pingMs || 0) <= 60
                   ? 'text-emerald-400'
                   : (pingMs || 0) <= 120
@@ -141,6 +147,7 @@ export const GameHUD: React.FC<Props> = ({
                   : 'text-rose-400'
               }`}
               style={{ boxShadow: '3px 3px 0px #0f172a' }}
+              title="Click or press F4 to toggle Net Debug"
             >
               <span
                 className={`w-2 h-2 rounded-full ${
@@ -152,6 +159,20 @@ export const GameHUD: React.FC<Props> = ({
                 }`}
               />
               <span>{pingMs !== undefined ? `${pingMs}ms` : '0ms'}</span>
+              <span className="text-[10px] text-zinc-400 ml-1">F4</span>
+            </button>
+          )}
+
+          {isOnline && onlinePlayerLabel && (
+            <div
+              className={`py-1.5 px-3 rounded-xl border-3 border-slate-900 text-xs font-brand uppercase tracking-wider font-black ${
+                onlinePlayerLabel.includes('Blue')
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-red-600 text-white'
+              }`}
+              style={{ boxShadow: '3px 3px 0px #0f172a' }}
+            >
+              {onlinePlayerLabel}
             </div>
           )}
         </div>

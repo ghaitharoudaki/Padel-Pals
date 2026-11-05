@@ -1,4 +1,4 @@
-﻿import * as THREE from 'three';
+import * as THREE from 'three';
 
 export type GameMode = '1v1' | '2v2' | 'online' | 'online-1v1' | 'online-2v2' | 'practice';
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'amateur' | 'pro' | 'legend';
@@ -214,4 +214,21 @@ export interface PhysicsEvents {
 export interface PhysicsStepResult {
   ball: BallState;
   events: PhysicsEvents;
+}
+
+export interface RoomConfig {
+  mode: '1v1' | '2v2';
+  matchLength: MatchLength;
+  difficulty: Difficulty;
+  onClientLeave: 'replace_with_bot' | 'end_match';
+  goldenPoint: boolean;
+}
+
+export interface MatchReliableEvent {
+  id: number;
+  type: 'bounce' | 'wall' | 'racket' | 'point' | 'fault';
+  soundType?: string;
+  position?: Vector3D;
+  winner?: Side;
+  scoreState?: ScoreState;
 }

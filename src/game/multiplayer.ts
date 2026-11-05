@@ -1,15 +1,28 @@
-﻿import Peer, { DataConnection } from 'peerjs';
+import Peer, { DataConnection } from 'peerjs';
 import {
   BallState,
+  CompactPlayerSnapshot,
+  CompactSnapshot,
+  ClientInputPacket,
+  Difficulty,
+  MatchLength,
   PlayerAppearance,
-  PlayerCustomization,
   PlayerState,
+  RoomConfig,
   ScoreState,
   ShotType,
   Side,
   SwingSide,
   Vector3D,
 } from './types';
+import {
+  encodeBinarySnapshot,
+  decodeBinarySnapshot,
+  encodeBinaryInputs,
+  decodeBinaryInputs,
+  BINARY_SNAPSHOT_MAGIC,
+  BINARY_INPUT_MAGIC,
+} from './netcodeBinary';
 
 export interface LobbySlot {
   slot: 1 | 2 | 3 | 4;
@@ -25,59 +38,26 @@ export interface LobbySlot {
   ping: number;
 }
 
-export interface CompactPlayerSnapshot {
-  s: 1 | 2 | 3 | 4;
-  x: number;
-  y: number;
-  z: number;
-  vx: number;
-  vz: number;
-  sw: boolean;
-  sp: number;
-  ss: SwingSide;
-  st: ShotType;
-}
-
-export interface CompactSnapshot {
-  seq: number;
-  t: number;
-  ackSeq: Record<string, number>;
-  // Ball: [x, y, z, vx, vy, vz, inPlay, lastHitter, bounceCount]
-  b: [number, number, number, number, number, number, boolean, Side | null, number];
-  p: CompactPlayerSnapshot[];
-  sc: {
-    g: [number, number];
-    pts: [string, string];
-    raw: [number, number];
-    s: Side;
-    r: number;
-  };
-}
-
-export interface ClientInputPacket {
-  seq: number;
-  dt: number;
-  moveX: number;
-  moveZ: number;
-  isJumping: boolean;
-  wantsSwing: boolean;
-  shotType: ShotType;
-  power: number;
-  aimX: number;
-  aimZ: number;
-  bias?: { x: number; z: number };
-  timestamp: number;
-}
+export { CompactPlayerSnapshot, CompactSnapshot, ClientInputPacket };
 
 export interface MultiplayerCallbacks {
-  onLobbyUpdated?: (slots: LobbySlot[], isHost: boolean, mySlot: 1 | 2 | 3 | 4) => void;
-  onMatchStarted?: (servingSide: Side) => void;
+  onLobbyUpdated?: (
+    slots: LobbySlot[],
+    isHost: boolean,
+    mySlot: 1 | 2 | 3 | 4,
+    config: RoomConfig
+  ) => void;
+  onMatchStarted?: (config: RoomConfig, slots: LobbySlot[], servingSide: Side, seed: number) => void;
   onSnapshotReceived?: (snapshot: CompactSnapshot) => void;
   onClientInputReceived?: (playerId: string, slot: 1 | 2 | 3 | 4, input: ClientInputPacket) => void;
   onPointScoredReceived?: (winner: Side, scoreState: ScoreState) => void;
   onHostDisconnected?: () => void;
   onPingUpdated?: (pingMs: number) => void;
-  onConnectionStatusChanged?: (status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected', error?: string) => void;
+  onConnectionStatusChanged?: (
+    status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected',
+    error?: string
+  ) => void;
+  onStatsUpdated?: (stats: { snapshotRateHz: number; packetLossPercent: number }) => void;
 }
 
 // Helper to quantize floats to save bandwidth
@@ -87,7 +67,7 @@ export function q(num: number, decimals: number = 2): number {
 }
 
 /**
- * Generate a clean 5-character alphanumeric room code (no ambiguous characters like 0/O, 1/I)
+ * Generate a clean 5-character alphanumeric room code (avoiding ambiguous characters like 0/O, 1/I)
  */
 export function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -100,7 +80,8 @@ export function generateRoomCode(): string {
 
 /**
  * Host-Authoritative Netcode Client for Padel Pals.
- * Hybrid WebRTC (PeerJS) + BroadcastChannel for 100% reliable sandbox & cross-tab execution.
+ * Dual-channel WebRTC (Reliable + Unreliable) with binary DataView serialization
+ * and instant BroadcastChannel multi-tab support for Google AI Studio sandbox.
  */
 export class MultiplayerClient {
   public callbacks: MultiplayerCallbacks = {};
@@ -110,7 +91,20 @@ export class MultiplayerClient {
   public mySide: Side = 'south';
   public isHost: boolean = false;
   public isConnected: boolean = false;
+  public isInMatch: boolean = false;
   public pingMs: number = 0;
+
+  // Single source of truth room configuration
+  public roomConfig: RoomConfig = {
+    mode: '2v2',
+    matchLength: '1_set',
+    difficulty: 'pro',
+    onClientLeave: 'replace_with_bot',
+    goldenPoint: false,
+  };
+
+  // Lobby slots state
+  public slots: LobbySlot[] = [];
 
   // Debug options for netcode testing
   public simulatedLatencyMs: number = 0;
@@ -119,164 +113,213 @@ export class MultiplayerClient {
   // Networking transports
   private broadcastChannel: BroadcastChannel | null = null;
   private peer: Peer | null = null;
-  private connections: Map<string, DataConnection> = new Map();
-  private hostConnection: DataConnection | null = null;
+  private reliableConnections: Map<string, DataConnection> = new Map();
+  private unreliableConnections: Map<string, DataConnection> = new Map();
+  private hostReliableConn: DataConnection | null = null;
+  private hostUnreliableConn: DataConnection | null = null;
 
-  // Lobby state
-  public slots: LobbySlot[] = [];
-
-  // Heartbeat & ping
-  private pingInterval: any = null;
+  // Heartbeat & watchdog
+  private heartbeatInterval: any = null;
+  private watchdogInterval: any = null;
+  private joinTimeoutTimer: any = null;
   private lastPacketReceivedTime: number = Date.now();
-  private connectionHealthCheck: any = null;
 
-  // Snapshot sequence
+  // Clock Synchronization (5-sample median offset)
+  private clockOffsets: number[] = [];
+  private medianClockOffset: number = 0;
+
+  // Input & snapshot sequence tracking
   private snapshotSeq: number = 0;
   private inputSeq: number = 0;
-  private ackedInputSeq: Record<string, number> = {};
+  private ackedInputSeq: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  private inputHistory: ClientInputPacket[] = [];
 
-  // Snapshot Interpolation Buffer (~100ms)
+  // Adaptive Snapshot Interpolation Buffer (~60ms to ~160ms)
   private snapshotBuffer: CompactSnapshot[] = [];
-  private readonly bufferDelayMs: number = 90;
+  private adaptiveBufferDelayMs: number = 90;
+
+  // Metrics tracking (for F4 overlay)
+  private snapshotsReceivedLastSecond: number = 0;
+  private lastRateCheckTime: number = performance.now();
+  public currentSnapshotRateHz: number = 0;
+  public currentPacketLossPercent: number = 0;
+  private expectedSnapSeq: number = 0;
+  private lostSnapCount: number = 0;
+  private totalSnapCount: number = 0;
 
   constructor(callbacks: MultiplayerCallbacks) {
     this.callbacks = callbacks;
     this.myPlayerId = 'p_' + Math.random().toString(36).substring(2, 8);
   }
 
-  /**
-   * Helper: Generate a clean 5-character alphanumeric room code
-   */
   public static generateRoomCode(): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = '';
-    for (let i = 0; i < 5; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    return generateRoomCode();
+  }
+
+  /**
+   * Initialize lobby slots based on mode (1v1: 2 slots, 2v2: 4 slots)
+   */
+  private createInitialSlots(hostAppearance: PlayerAppearance, mode: '1v1' | '2v2'): LobbySlot[] {
+    const is1v1 = mode === '1v1';
+    const s1: LobbySlot = {
+      slot: 1,
+      side: 'south',
+      team: 'blue',
+      zone: 'left',
+      playerId: this.isHost ? this.myPlayerId : null,
+      playerName: hostAppearance.name || 'Player 1',
+      appearance: { ...hostAppearance },
+      isBot: false,
+      isReady: true,
+      isHost: true,
+      ping: 0,
+    };
+
+    const s2: LobbySlot = {
+      slot: 2,
+      side: 'north',
+      team: 'red',
+      zone: is1v1 ? 'left' : 'left',
+      playerId: null,
+      playerName: 'Alejandro (Bot)',
+      appearance: {
+        ...hostAppearance,
+        name: 'Alejandro',
+        number: 5,
+        jerseyPrimary: '#dc2626',
+        jerseySecondary: '#18181b',
+        shortsColor: '#dc2626',
+        hairColor: '#d4af37',
+      },
+      isBot: true,
+      isReady: true,
+      isHost: false,
+      ping: 0,
+    };
+
+    if (is1v1) {
+      return [s1, s2];
     }
-    return code;
+
+    const s3: LobbySlot = {
+      slot: 3,
+      side: 'south',
+      team: 'blue',
+      zone: 'right',
+      playerId: null,
+      playerName: 'Carlos (Bot)',
+      appearance: {
+        ...hostAppearance,
+        name: 'Carlos',
+        number: 4,
+        jerseyPrimary: '#2563eb',
+        jerseySecondary: '#ffffff',
+        shortsColor: '#ffffff',
+        hairColor: '#451a03',
+      },
+      isBot: true,
+      isReady: true,
+      isHost: false,
+      ping: 0,
+    };
+
+    const s4: LobbySlot = {
+      slot: 4,
+      side: 'north',
+      team: 'red',
+      zone: 'right',
+      playerId: null,
+      playerName: 'Mateo (Bot)',
+      appearance: {
+        ...hostAppearance,
+        name: 'Mateo',
+        number: 10,
+        jerseyPrimary: '#ef4444',
+        jerseySecondary: '#18181b',
+        shortsColor: '#18181b',
+        hairColor: '#18181b',
+      },
+      isBot: true,
+      isReady: true,
+      isHost: false,
+      ping: 0,
+    };
+
+    return [s1, s2, s3, s4];
   }
 
   /**
-   * Initialize standard 4-slot padel court lobby
+   * Set or update RoomConfig from host
    */
-  private createInitialSlots(hostAppearance: PlayerAppearance): LobbySlot[] {
-    return [
-      {
-        slot: 1,
-        side: 'south',
-        team: 'blue',
-        zone: 'left',
-        playerId: this.myPlayerId,
-        playerName: hostAppearance.name || 'Player 1',
-        appearance: { ...hostAppearance },
-        isBot: false,
-        isReady: true,
-        isHost: true,
-        ping: 0,
-      },
-      {
-        slot: 2,
-        side: 'north',
-        team: 'red',
-        zone: 'left',
-        playerId: null,
-        playerName: 'Alejandro (Bot)',
-        appearance: {
-          ...hostAppearance,
-          name: 'Alejandro',
-          number: 5,
-          jerseyPrimary: '#dc2626',
-          jerseySecondary: '#18181b',
-          shortsColor: '#dc2626',
-          hairColor: '#d4af37',
-        },
-        isBot: true,
-        isReady: true,
-        isHost: false,
-        ping: 0,
-      },
-      {
-        slot: 3,
-        side: 'south',
-        team: 'blue',
-        zone: 'right',
-        playerId: null,
-        playerName: 'Carlos (Bot)',
-        appearance: {
-          ...hostAppearance,
-          name: 'Carlos',
-          number: 4,
-          jerseyPrimary: '#2563eb',
-          jerseySecondary: '#ffffff',
-          shortsColor: '#ffffff',
-          hairColor: '#451a03',
-        },
-        isBot: true,
-        isReady: true,
-        isHost: false,
-        ping: 0,
-      },
-      {
-        slot: 4,
-        side: 'north',
-        team: 'red',
-        zone: 'right',
-        playerId: null,
-        playerName: 'Mateo (Bot)',
-        appearance: {
-          ...hostAppearance,
-          name: 'Mateo',
-          number: 10,
-          jerseyPrimary: '#ef4444',
-          jerseySecondary: '#18181b',
-          shortsColor: '#18181b',
-          hairColor: '#18181b',
-        },
-        isBot: true,
-        isReady: true,
-        isHost: false,
-        ping: 0,
-      },
-    ];
+  public updateRoomConfig(partial: Partial<RoomConfig>) {
+    if (!this.isHost) return;
+    const oldMode = this.roomConfig.mode;
+    this.roomConfig = { ...this.roomConfig, ...partial };
+
+    // If mode changed (e.g. 1v1 <-> 2v2), adapt lobby slots
+    if (partial.mode && partial.mode !== oldMode) {
+      const hostSlot = this.slots.find((s) => s.isHost) || this.slots[0];
+      const hostApp = hostSlot?.appearance || { name: 'Player 1' } as PlayerAppearance;
+      this.slots = this.createInitialSlots(hostApp, partial.mode);
+    }
+
+    this.broadcastLobbyState();
   }
 
   /**
-   * Create a new room as Host
+   * Host creates a new room with a clean 5-character code
    */
-  public createRoom(roomCode: string, appearance: PlayerAppearance) {
+  public createRoom(roomCode: string, appearance: PlayerAppearance, mode: '1v1' | '2v2' = '2v2') {
     this.disconnect();
     this.currentRoomId = roomCode.toUpperCase().trim();
     this.isHost = true;
+    this.isInMatch = false;
     this.mySlot = 1;
     this.mySide = 'south';
-    this.slots = this.createInitialSlots(appearance);
+    this.roomConfig.mode = mode;
+    this.slots = this.createInitialSlots(appearance, mode);
 
     this.callbacks.onConnectionStatusChanged?.('connecting');
     this.initTransports(true, this.currentRoomId, appearance);
   }
 
   /**
-   * Join an existing room as Client
+   * Client joins an existing room by code
    */
   public joinRoom(roomCode: string, appearance: PlayerAppearance) {
     this.disconnect();
     const cleanCode = roomCode.toUpperCase().trim();
     if (cleanCode.length < 4 || cleanCode.length > 8) {
-      this.callbacks.onConnectionStatusChanged?.('disconnected', 'Invalid room code length (5 chars required)');
+      this.callbacks.onConnectionStatusChanged?.(
+        'disconnected',
+        'Invalid room code length (5 characters required)'
+      );
       return;
     }
 
     this.currentRoomId = cleanCode;
     this.isHost = false;
+    this.isInMatch = false;
     this.callbacks.onConnectionStatusChanged?.('connecting');
+
+    // 6-second timeout watchdog for invalid room code or network blocks
+    this.joinTimeoutTimer = setTimeout(() => {
+      if (!this.isConnected) {
+        this.callbacks.onConnectionStatusChanged?.(
+          'disconnected',
+          `Could not connect to room "${cleanCode}". The room code may be incorrect or peer-to-peer is blocked by the network.`
+        );
+      }
+    }, 6000);
+
     this.initTransports(false, this.currentRoomId, appearance);
   }
 
   /**
-   * Initialize dual transports: BroadcastChannel (instant sandbox 2-tab) + PeerJS (WebRTC)
+   * Initialize dual-channel WebRTC connections and BroadcastChannel
    */
   private initTransports(asHost: boolean, roomId: string, appearance: PlayerAppearance) {
-    // 1. BroadcastChannel (Guarantees instant sandbox multi-tab connectivity)
+    // 1. BroadcastChannel (Instant local multi-tab sandbox connectivity)
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         this.broadcastChannel = new BroadcastChannel(`padel_pals_net_${roomId}`);
@@ -285,10 +328,10 @@ export class MultiplayerClient {
         };
       }
     } catch (e) {
-      console.warn('BroadcastChannel not available:', e);
+      console.warn('BroadcastChannel fallback unavailable:', e);
     }
 
-    // 2. WebRTC PeerJS
+    // 2. WebRTC PeerJS with dual data channels (Reliable + Unreliable)
     try {
       const PeerCtor = (Peer as any)?.default || (Peer as any)?.Peer || Peer;
       const hasWebRTC =
@@ -307,6 +350,8 @@ export class MultiplayerClient {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19302' },
               { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun2.l.google.com:19302' },
+              { urls: 'stun:stun3.l.google.com:19302' },
             ],
           },
         });
@@ -314,20 +359,30 @@ export class MultiplayerClient {
 
         peer.on('open', () => {
           this.isConnected = true;
+          if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
           this.callbacks.onConnectionStatusChanged?.('connected');
 
           if (asHost) {
-            // Host broadcast initial lobby state
             this.broadcastLobbyState();
           } else {
-            // Client connects to host peer
+            // Client connects two data channels to the host:
+            // 1. Reliable ordered channel for lobby and match events
             const hostPeerId = `padelpals-${roomId.toLowerCase()}`;
-            const conn = peer.connect(hostPeerId, { reliable: true });
-            this.setupConnection(conn, appearance);
-            this.hostConnection = conn;
+            const relConn = peer.connect(hostPeerId, { reliable: true, label: 'reliable' });
+            this.setupConnection(relConn, appearance, true);
+            this.hostReliableConn = relConn;
 
-            // Also broadcast join request via BroadcastChannel
-            this.sendTransportMessage({
+            // 2. Unreliable unordered channel for high-frequency binary inputs and snapshots
+            const unrelConn = peer.connect(hostPeerId, {
+              reliable: false,
+              ordered: false,
+              label: 'unreliable',
+            });
+            this.setupConnection(unrelConn, appearance, false);
+            this.hostUnreliableConn = unrelConn;
+
+            // Send join request
+            this.sendReliableMessage({
               type: 'request_join',
               playerId: this.myPlayerId,
               appearance,
@@ -335,34 +390,37 @@ export class MultiplayerClient {
           }
         });
 
-        peer.on('connection', (conn: any) => {
-          this.setupConnection(conn, appearance);
+        peer.on('connection', (conn: DataConnection) => {
+          const isRel = conn.label !== 'unreliable';
+          this.setupConnection(conn, appearance, isRel);
         });
 
         peer.on('error', (err: any) => {
-          // If host ID is already taken, try joining as client
           if (asHost && err.type === 'unavailable-id') {
             console.warn('Room host ID already active; switching to join mode');
             this.isHost = false;
             this.joinRoom(roomId, appearance);
             return;
           }
-          console.warn('PeerJS warning:', err.type, err.message);
+          if (err.type === 'peer-unavailable') {
+            this.callbacks.onConnectionStatusChanged?.(
+              'disconnected',
+              `Room "${roomId}" not found. Verify the room code.`
+            );
+          }
         });
+      }
+    } catch (e) {
+      console.warn('PeerJS initialization skipped:', e);
     }
-  } catch (e) {
-    console.warn('PeerJS initialization skipped:', e);
-  }
 
-    // If Host, mark connected and start ping ticker
     if (asHost) {
       this.isConnected = true;
       this.callbacks.onConnectionStatusChanged?.('connected');
-      this.callbacks.onLobbyUpdated?.(this.slots, true, 1);
+      this.callbacks.onLobbyUpdated?.(this.slots, true, 1, this.roomConfig);
     } else {
-      // Send join ping over BroadcastChannel
       setTimeout(() => {
-        this.sendTransportMessage({
+        this.sendReliableMessage({
           type: 'request_join',
           playerId: this.myPlayerId,
           appearance,
@@ -370,19 +428,26 @@ export class MultiplayerClient {
       }, 50);
     }
 
-    // Ping ticker & reconnection watchdog
     this.startHeartbeat();
   }
 
-  private setupConnection(conn: DataConnection, appearance: PlayerAppearance) {
+  private setupConnection(conn: DataConnection, appearance: PlayerAppearance, isReliable: boolean) {
     conn.on('open', () => {
-      this.connections.set(conn.peer, conn);
       this.isConnected = true;
+      if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
       this.callbacks.onConnectionStatusChanged?.('connected');
 
+      if (isReliable) {
+        this.reliableConnections.set(conn.peer, conn);
+      } else {
+        this.unreliableConnections.set(conn.peer, conn);
+      }
+
       if (!this.isHost) {
-        this.hostConnection = conn;
-        this.sendTransportMessage({
+        if (isReliable) this.hostReliableConn = conn;
+        else this.hostUnreliableConn = conn;
+
+        this.sendReliableMessage({
           type: 'request_join',
           playerId: this.myPlayerId,
           appearance,
@@ -392,112 +457,228 @@ export class MultiplayerClient {
       }
     });
 
-    conn.on('data', (data) => {
+    conn.on('data', (data: any) => {
       this.handleIncomingRawMessage(data);
     });
 
     conn.on('close', () => {
-      this.connections.delete(conn.peer);
-      if (!this.isHost && conn === this.hostConnection) {
+      this.reliableConnections.delete(conn.peer);
+      this.unreliableConnections.delete(conn.peer);
+      if (!this.isHost && conn === this.hostReliableConn) {
         this.callbacks.onHostDisconnected?.();
         this.callbacks.onConnectionStatusChanged?.('disconnected', 'Host disconnected');
       }
     });
   }
 
+  /**
+   * Heartbeat & connection health watchdog
+   */
   private startHeartbeat() {
-    if (this.pingInterval) clearInterval(this.pingInterval);
-    if (this.connectionHealthCheck) clearInterval(this.connectionHealthCheck);
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+    if (this.watchdogInterval) clearInterval(this.watchdogInterval);
 
-    this.pingInterval = setInterval(() => {
+    this.heartbeatInterval = setInterval(() => {
       if (!this.isConnected) return;
-      this.sendTransportMessage({
+      this.sendReliableMessage({
         type: 'ping',
         from: this.myPlayerId,
-        t: Date.now(),
+        t0: performance.now(),
       });
-    }, 1200);
 
-    // Watchdog for connection loss
-    this.connectionHealthCheck = setInterval(() => {
+      // Update rate calculation
+      const now = performance.now();
+      const elapsed = (now - this.lastRateCheckTime) / 1000;
+      if (elapsed >= 1.0) {
+        this.currentSnapshotRateHz = Math.round(this.snapshotsReceivedLastSecond / elapsed);
+        this.snapshotsReceivedLastSecond = 0;
+        this.lastRateCheckTime = now;
+
+        if (this.totalSnapCount > 0) {
+          this.currentPacketLossPercent = Math.min(
+            100,
+            (this.lostSnapCount / this.totalSnapCount) * 100
+          );
+        }
+        this.callbacks.onStatsUpdated?.({
+          snapshotRateHz: this.currentSnapshotRateHz,
+          packetLossPercent: this.currentPacketLossPercent,
+        });
+      }
+    }, 1000);
+
+    this.watchdogInterval = setInterval(() => {
       if (!this.isConnected) return;
       const timeSinceLast = Date.now() - this.lastPacketReceivedTime;
-      if (timeSinceLast > 3500) {
+      if (timeSinceLast > 3800) {
         this.callbacks.onConnectionStatusChanged?.('reconnecting');
       }
     }, 1000);
   }
 
   /**
-   * Internal transport sender (with simulated latency & packet loss support)
+   * Send reliable message (Lobby, Events, Rules, Start)
    */
-  private sendTransportMessage(msg: any) {
+  public sendReliableMessage(msg: any) {
     if (this.simulatedPacketLossRate > 0 && Math.random() < this.simulatedPacketLossRate) {
-      return; // Simulate dropped packet
+      return;
     }
 
     const deliver = () => {
-      // 1. BroadcastChannel
       if (this.broadcastChannel) {
         try {
           this.broadcastChannel.postMessage(msg);
         } catch {}
       }
 
-      // 2. WebRTC PeerJS
       if (this.isHost) {
-        this.connections.forEach((conn) => {
-          if (conn.open) {
-            conn.send(msg);
-          }
+        this.reliableConnections.forEach((conn) => {
+          if (conn.open) conn.send(msg);
         });
-      } else if (this.hostConnection && this.hostConnection.open) {
-        this.hostConnection.send(msg);
+      } else if (this.hostReliableConn && this.hostReliableConn.open) {
+        this.hostReliableConn.send(msg);
       }
     };
 
     if (this.simulatedLatencyMs > 0) {
-      const jitter = (Math.random() - 0.5) * 30;
-      setTimeout(deliver, Math.max(10, this.simulatedLatencyMs + jitter));
+      const jitter = (Math.random() - 0.5) * 20;
+      setTimeout(deliver, Math.max(5, this.simulatedLatencyMs + jitter));
     } else {
       deliver();
     }
   }
 
   /**
-   * Core Message Dispatcher
+   * Send unreliable binary packet (Inputs and Snapshots)
    */
-  private handleIncomingRawMessage(msg: any) {
-    if (!msg || typeof msg !== 'object') return;
-    if (msg.from === this.myPlayerId) return; // Ignore own echoes
+  private sendUnreliablePacket(data: Uint8Array | ArrayBuffer | any) {
+    if (this.simulatedPacketLossRate > 0 && Math.random() < this.simulatedPacketLossRate) {
+      return;
+    }
+
+    const deliver = () => {
+      if (this.broadcastChannel) {
+        try {
+          this.broadcastChannel.postMessage(data);
+        } catch {}
+      }
+
+      if (this.isHost) {
+        this.unreliableConnections.forEach((conn) => {
+          if (conn.open) conn.send(data);
+          else {
+            // Fallback to reliable connection if unreliable is not ready
+            const rel = this.reliableConnections.get(conn.peer);
+            if (rel && rel.open) rel.send(data);
+          }
+        });
+      } else {
+        if (this.hostUnreliableConn && this.hostUnreliableConn.open) {
+          this.hostUnreliableConn.send(data);
+        } else if (this.hostReliableConn && this.hostReliableConn.open) {
+          this.hostReliableConn.send(data);
+        }
+      }
+    };
+
+    if (this.simulatedLatencyMs > 0) {
+      const jitter = (Math.random() - 0.5) * 20;
+      setTimeout(deliver, Math.max(5, this.simulatedLatencyMs + jitter));
+    } else {
+      deliver();
+    }
+  }
+
+  /**
+   * Main incoming message dispatcher (handles binary buffers and JSON)
+   */
+  private handleIncomingRawMessage(data: any) {
     this.lastPacketReceivedTime = Date.now();
 
-    switch (msg.type) {
+    // 1. Check for binary packet (ArrayBuffer or Uint8Array)
+    if (data instanceof ArrayBuffer || data instanceof Uint8Array || data?.byteLength) {
+      const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+      if (bytes.length >= 2) {
+        const magic = bytes[0] | (bytes[1] << 8);
+
+        // Binary Snapshot from Host
+        if (magic === BINARY_SNAPSHOT_MAGIC) {
+          if (this.isHost) return;
+          const snapshot = decodeBinarySnapshot(bytes);
+          if (snapshot) {
+            this.handleDecodedSnapshot(snapshot);
+          }
+          return;
+        }
+
+        // Binary Input from Client
+        if (magic === BINARY_INPUT_MAGIC) {
+          if (!this.isHost) return;
+          const decoded = decodeBinaryInputs(bytes);
+          if (decoded && decoded.inputs.length > 0) {
+            const latest = decoded.inputs[0];
+            this.ackedInputSeq[decoded.slot] = latest.seq;
+            this.callbacks.onClientInputReceived?.(
+              `slot_${decoded.slot}`,
+              decoded.slot,
+              latest
+            );
+          }
+          return;
+        }
+      }
+    }
+
+    // 2. Reliable JSON / Event message
+    if (!data || typeof data !== 'object') return;
+    if (data.from === this.myPlayerId) return; // Ignore own echoes
+
+    switch (data.type) {
       case 'request_join': {
         if (!this.isHost) return;
-        this.handleClientJoinRequest(msg.playerId, msg.appearance);
+        this.handleClientJoinRequest(data.playerId, data.appearance);
+        break;
+      }
+      case 'join_response': {
+        if (data.accepted) {
+          if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
+          if (data.config) this.roomConfig = data.config;
+          if (data.slots) this.slots = data.slots;
+          if (data.assignedSlot) this.mySlot = data.assignedSlot;
+          const found = this.slots.find((s) => s.slot === this.mySlot);
+          if (found) this.mySide = found.side;
+          this.callbacks.onLobbyUpdated?.(this.slots, false, this.mySlot, this.roomConfig);
+          this.callbacks.onConnectionStatusChanged?.('connected');
+        } else {
+          this.callbacks.onConnectionStatusChanged?.(
+            'disconnected',
+            data.error || 'Could not join room'
+          );
+        }
         break;
       }
       case 'lobby_state': {
-        this.slots = msg.slots;
-        // Find my slot
+        if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
+        if (data.config) this.roomConfig = data.config;
+        this.slots = data.slots;
+
         const found = this.slots.find((s) => s.playerId === this.myPlayerId);
         if (found) {
           this.mySlot = found.slot;
           this.mySide = found.side;
         }
-        this.callbacks.onLobbyUpdated?.(this.slots, this.isHost, this.mySlot);
+        this.callbacks.onLobbyUpdated?.(this.slots, this.isHost, this.mySlot, this.roomConfig);
         this.callbacks.onConnectionStatusChanged?.('connected');
         break;
       }
       case 'slot_change_request': {
         if (!this.isHost) return;
-        this.handleSlotChangeRequest(msg.playerId, msg.targetSlot);
+        this.handleSlotChangeRequest(data.playerId, data.targetSlot);
         break;
       }
       case 'toggle_ready_request': {
         if (!this.isHost) return;
-        const slot = this.slots.find((s) => s.playerId === msg.playerId);
+        const slot = this.slots.find((s) => s.playerId === data.playerId);
         if (slot) {
           slot.isReady = !slot.isReady;
           this.broadcastLobbyState();
@@ -506,7 +687,7 @@ export class MultiplayerClient {
       }
       case 'toggle_bot_slot': {
         if (!this.isHost) return;
-        const slot = this.slots.find((s) => s.slot === msg.slot);
+        const slot = this.slots.find((s) => s.slot === data.slot);
         if (slot && !slot.playerId) {
           slot.isBot = !slot.isBot;
           slot.isReady = slot.isBot;
@@ -516,38 +697,60 @@ export class MultiplayerClient {
         break;
       }
       case 'start_match': {
-        this.callbacks.onMatchStarted?.(msg.servingSide || 'south');
+        this.isInMatch = true;
+        if (data.config) this.roomConfig = data.config;
+        if (data.slots) this.slots = data.slots;
+        this.callbacks.onMatchStarted?.(
+          this.roomConfig,
+          this.slots,
+          data.servingSide || 'south',
+          data.seed || 12345
+        );
         break;
       }
       case 'client_input': {
+        // Fallback if client sent non-binary input
         if (!this.isHost) return;
-        this.ackedInputSeq[msg.playerId] = msg.input.seq;
-        this.callbacks.onClientInputReceived?.(msg.playerId, msg.slot, msg.input);
+        this.ackedInputSeq[data.slot] = data.input.seq;
+        this.callbacks.onClientInputReceived?.(data.playerId, data.slot, data.input);
         break;
       }
       case 'world_snapshot': {
-        if (this.isHost) return; // Only clients consume host snapshots
-        this.addSnapshotToBuffer(msg.snapshot);
-        this.callbacks.onSnapshotReceived?.(msg.snapshot);
+        // Fallback if snapshot was sent as JSON
+        if (this.isHost) return;
+        this.handleDecodedSnapshot(data.snapshot);
         break;
       }
       case 'point_scored': {
-        this.callbacks.onPointScoredReceived?.(msg.winner, msg.scoreState);
+        this.callbacks.onPointScoredReceived?.(data.winner, data.scoreState);
         break;
       }
       case 'ping': {
-        this.sendTransportMessage({
+        this.sendReliableMessage({
           type: 'pong',
-          for: msg.from,
-          t: msg.t,
-          serverT: Date.now(),
+          for: data.from,
+          t0: data.t0,
+          tServer: performance.now(),
         });
         break;
       }
       case 'pong': {
-        if (msg.for === this.myPlayerId) {
-          const rtt = Math.max(1, Date.now() - msg.t);
+        if (data.for === this.myPlayerId) {
+          const t1 = performance.now();
+          const rtt = Math.max(1, t1 - data.t0);
           this.pingMs = Math.round(rtt / 2);
+
+          // Clock sync offset calculation
+          const offset = data.tServer - (data.t0 + rtt / 2);
+          this.clockOffsets.push(offset);
+          if (this.clockOffsets.length > 5) this.clockOffsets.shift();
+
+          const sorted = [...this.clockOffsets].sort((a, b) => a - b);
+          this.medianClockOffset = sorted[Math.floor(sorted.length / 2)];
+
+          // Adapt buffer delay dynamically based on ping
+          this.adaptiveBufferDelayMs = Math.max(65, Math.min(160, this.pingMs + 35));
+
           this.callbacks.onPingUpdated?.(this.pingMs);
         }
         break;
@@ -560,26 +763,66 @@ export class MultiplayerClient {
     }
   }
 
+  private handleDecodedSnapshot(snapshot: CompactSnapshot) {
+    this.snapshotsReceivedLastSecond++;
+    this.totalSnapCount++;
+
+    if (this.expectedSnapSeq > 0 && snapshot.seq > this.expectedSnapSeq) {
+      this.lostSnapCount += snapshot.seq - this.expectedSnapSeq;
+    }
+    this.expectedSnapSeq = snapshot.seq + 1;
+
+    this.addSnapshotToBuffer(snapshot);
+    this.callbacks.onSnapshotReceived?.(snapshot);
+  }
+
+  /**
+   * Process client join request on Host
+   */
   private handleClientJoinRequest(playerId: string, appearance: PlayerAppearance) {
-    // Check if player is already in a slot
+    // If room is already in an active match, check config
+    if (this.isInMatch) {
+      this.sendReliableMessage({
+        type: 'join_response',
+        accepted: false,
+        error: `Match already in progress in room ${this.currentRoomId}.`,
+      });
+      return;
+    }
+
     let existing = this.slots.find((s) => s.playerId === playerId);
     if (!existing) {
-      // Find first empty slot (prefer human or replace bot)
+      // Find first available slot (prefers slot where playerId is null)
       const emptySlot =
         this.slots.find((s) => s.playerId === null && !s.isBot) ||
         this.slots.find((s) => s.playerId === null);
 
       if (!emptySlot) {
-        // Room full!
+        this.sendReliableMessage({
+          type: 'join_response',
+          accepted: false,
+          error: `Room ${this.currentRoomId} is full (all slots occupied).`,
+        });
         return;
       }
+
       emptySlot.playerId = playerId;
       emptySlot.playerName = appearance.name || `Player ${emptySlot.slot}`;
       emptySlot.appearance = { ...appearance };
       emptySlot.isBot = false;
       emptySlot.isReady = false;
       emptySlot.isHost = false;
+
+      // Send direct confirmation
+      this.sendReliableMessage({
+        type: 'join_response',
+        accepted: true,
+        assignedSlot: emptySlot.slot,
+        config: this.roomConfig,
+        slots: this.slots,
+      });
     }
+
     this.broadcastLobbyState();
   }
 
@@ -587,9 +830,8 @@ export class MultiplayerClient {
     const current = this.slots.find((s) => s.playerId === playerId);
     const target = this.slots.find((s) => s.slot === targetSlot);
     if (!current || !target) return;
-    if (target.playerId && target.playerId !== playerId) return; // Slot occupied by another human
+    if (target.playerId && target.playerId !== playerId) return;
 
-    // Swap or move
     target.playerId = current.playerId;
     target.playerName = current.playerName;
     target.appearance = current.appearance;
@@ -606,12 +848,13 @@ export class MultiplayerClient {
   }
 
   public broadcastLobbyState() {
-    this.sendTransportMessage({
+    this.sendReliableMessage({
       type: 'lobby_state',
       from: this.myPlayerId,
+      config: this.roomConfig,
       slots: this.slots,
     });
-    this.callbacks.onLobbyUpdated?.(this.slots, true, this.mySlot);
+    this.callbacks.onLobbyUpdated?.(this.slots, true, this.mySlot, this.roomConfig);
   }
 
   // ==========================================
@@ -622,7 +865,7 @@ export class MultiplayerClient {
     if (this.isHost) {
       this.handleSlotChangeRequest(this.myPlayerId, targetSlot);
     } else {
-      this.sendTransportMessage({
+      this.sendReliableMessage({
         type: 'slot_change_request',
         from: this.myPlayerId,
         playerId: this.myPlayerId,
@@ -639,7 +882,7 @@ export class MultiplayerClient {
         this.broadcastLobbyState();
       }
     } else {
-      this.sendTransportMessage({
+      this.sendReliableMessage({
         type: 'toggle_ready_request',
         from: this.myPlayerId,
         playerId: this.myPlayerId,
@@ -649,10 +892,13 @@ export class MultiplayerClient {
 
   public toggleBotSlot(slotNum: 1 | 2 | 3 | 4) {
     if (!this.isHost) return;
-    this.handleIncomingRawMessage({
-      type: 'toggle_bot_slot',
-      slot: slotNum,
-    });
+    const slot = this.slots.find((s) => s.slot === slotNum);
+    if (slot && !slot.playerId) {
+      slot.isBot = !slot.isBot;
+      slot.isReady = slot.isBot;
+      slot.playerName = slot.isBot ? `${slot.appearance.name} (Bot)` : 'Empty';
+      this.broadcastLobbyState();
+    }
   }
 
   public fillAllEmptySlotsWithBots() {
@@ -669,146 +915,160 @@ export class MultiplayerClient {
 
   public startMatch() {
     if (!this.isHost) return;
-    this.sendTransportMessage({
+    this.isInMatch = true;
+    const seed = Math.floor(Math.random() * 1000000);
+    this.sendReliableMessage({
       type: 'start_match',
       from: this.myPlayerId,
+      config: this.roomConfig,
+      slots: this.slots,
       servingSide: 'south',
+      seed,
     });
-    this.callbacks.onMatchStarted?.('south');
+    this.callbacks.onMatchStarted?.(this.roomConfig, this.slots, 'south', seed);
   }
 
   // ==========================================
   // GAMEPLAY NETCODE: INPUTS & SNAPSHOTS
   // ==========================================
 
+  public getServerTime(): number {
+    return performance.now() + this.medianClockOffset;
+  }
+
   /**
-   * Client sends input packet at 30-60 Hz
+   * Client sends input packet at 60 Hz with up to 3 historical packets for loss resilience
    */
   public sendInput(input: Omit<ClientInputPacket, 'seq' | 'timestamp'>) {
     this.inputSeq++;
     const packet: ClientInputPacket = {
       ...input,
       seq: this.inputSeq,
-      timestamp: Date.now(),
+      timestamp: performance.now(),
     };
 
-    this.sendTransportMessage({
-      type: 'client_input',
-      from: this.myPlayerId,
-      playerId: this.myPlayerId,
-      slot: this.mySlot,
-      input: packet,
-    });
+    this.inputHistory.unshift(packet);
+    if (this.inputHistory.length > 3) this.inputHistory.pop();
 
-    return this.inputSeq;
+    // Binary encoding (zero allocations)
+    const binary = encodeBinaryInputs(this.mySlot, packet.timestamp, this.inputHistory);
+    this.sendUnreliablePacket(binary);
   }
 
   /**
-   * Host broadcasts compact world snapshot at 20-30 Hz
+   * Host broadcasts authoritative snapshot at 30 Hz using binary DataView
    */
-  public broadcastSnapshot(
-    ball: BallState,
-    players: PlayerState[],
-    score: ScoreState
-  ) {
+  public broadcastSnapshot(ball: BallState, players: PlayerState[], score: ScoreState) {
     if (!this.isHost) return;
     this.snapshotSeq++;
 
     const compactPlayers: CompactPlayerSnapshot[] = players.map((p) => ({
       s: p.slot,
-      x: q(p.position.x),
-      y: q(p.position.y),
-      z: q(p.position.z),
-      vx: q(p.velocity.x),
-      vz: q(p.velocity.z),
+      x: q(p.position.x, 2),
+      y: q(p.position.y, 2),
+      z: q(p.position.z, 2),
+      vx: q(p.velocity.x, 2),
+      vz: q(p.velocity.z, 2),
       sw: p.isSwinging,
       sp: q(p.racketSwingProgress, 2),
       ss: p.swingSide,
       st: p.currentShotType,
     }));
 
-    const compactSnapshot: CompactSnapshot = {
+    const snapshot: CompactSnapshot = {
       seq: this.snapshotSeq,
-      t: Date.now(),
+      t: performance.now(),
       ackSeq: { ...this.ackedInputSeq },
       b: [
-        q(ball.position.x),
-        q(ball.position.y),
-        q(ball.position.z),
-        q(ball.velocity.x),
-        q(ball.velocity.y),
-        q(ball.velocity.z),
+        q(ball.position.x, 2),
+        q(ball.position.y, 2),
+        q(ball.position.z, 2),
+        q(ball.velocity.x, 2),
+        q(ball.velocity.y, 2),
+        q(ball.velocity.z, 2),
         ball.inPlay,
         ball.lastHitter,
         ball.bounceCount,
       ],
       p: compactPlayers,
       sc: {
-        g: score.games,
-        pts: score.points,
-        raw: score.rawPoints,
+        g: [score.games[0], score.games[1]],
+        pts: [score.points[0], score.points[1]],
+        raw: [score.rawPoints[0], score.rawPoints[1]],
         s: score.servingSide,
         r: score.rallyCount,
       },
     };
 
-    this.sendTransportMessage({
-      type: 'world_snapshot',
-      from: this.myPlayerId,
-      snapshot: compactSnapshot,
-    });
+    const binary = encodeBinarySnapshot(snapshot);
+    this.sendUnreliablePacket(binary);
   }
 
   public broadcastPointScored(winner: Side, scoreState: ScoreState) {
     if (!this.isHost) return;
-    this.sendTransportMessage({
+    this.sendReliableMessage({
       type: 'point_scored',
-      from: this.myPlayerId,
       winner,
       scoreState,
     });
   }
 
   // ==========================================
-  // CLIENT SNAPSHOT INTERPOLATION BUFFER (~100ms)
+  // ADAPTIVE INTERPOLATION BUFFER
   // ==========================================
 
-  private addSnapshotToBuffer(s: CompactSnapshot) {
-    this.snapshotBuffer.push(s);
-    if (this.snapshotBuffer.length > 20) {
+  private addSnapshotToBuffer(snapshot: CompactSnapshot) {
+    this.snapshotBuffer.push(snapshot);
+    const maxBufferSize = 25;
+    if (this.snapshotBuffer.length > maxBufferSize) {
       this.snapshotBuffer.shift();
     }
   }
 
   /**
-   * Interpolate remote player position from buffer
+   * Interpolate remote player state with smooth extrapolation fallback
    */
   public getInterpolatedPlayer(slot: 1 | 2 | 3 | 4): CompactPlayerSnapshot | null {
     if (this.snapshotBuffer.length === 0) return null;
-    if (this.snapshotBuffer.length === 1) {
-      return this.snapshotBuffer[0].p.find((p) => p.s === slot) || null;
-    }
 
-    const renderTime = Date.now() - this.bufferDelayMs;
+    const renderTime = (this.isHost ? performance.now() : this.getServerTime()) - this.adaptiveBufferDelayMs;
 
-    // Find two snapshots flanking renderTime
-    let s0 = this.snapshotBuffer[0];
-    let s1 = this.snapshotBuffer[this.snapshotBuffer.length - 1];
+    // Find two bounding snapshots
+    let s0: CompactSnapshot | null = null;
+    let s1: CompactSnapshot | null = null;
 
     for (let i = this.snapshotBuffer.length - 1; i >= 0; i--) {
-      if (this.snapshotBuffer[i].t <= renderTime) {
-        s0 = this.snapshotBuffer[i];
-        s1 = this.snapshotBuffer[Math.min(this.snapshotBuffer.length - 1, i + 1)];
+      const snap = this.snapshotBuffer[i];
+      if (snap.t <= renderTime) {
+        s0 = snap;
+        s1 = this.snapshotBuffer[i + 1] || null;
         break;
       }
     }
 
-    const p0 = s0.p.find((p) => p.s === slot);
-    const p1 = s1.p.find((p) => p.s === slot);
-    if (!p0 || !p1) return p0 || p1 || null;
+    if (!s0) {
+      s0 = this.snapshotBuffer[0];
+      s1 = this.snapshotBuffer[1] || s0;
+    }
 
-    const range = s1.t - s0.t;
-    const alpha = range <= 0 ? 0 : Math.max(0, Math.min(1, (renderTime - s0.t) / range));
+    const p0 = s0.p.find((p) => p.s === slot);
+    if (!p0) return null;
+
+    if (!s1 || s0 === s1) {
+      // Extrapolate up to 100ms if late snapshot
+      const deltaT = Math.min(0.1, Math.max(0, (renderTime - s0.t) / 1000));
+      return {
+        ...p0,
+        x: p0.x + p0.vx * deltaT,
+        z: p0.z + p0.vz * deltaT,
+      };
+    }
+
+    const p1 = s1.p.find((p) => p.s === slot);
+    if (!p1) return p0;
+
+    const timeSpan = Math.max(1, s1.t - s0.t);
+    const alpha = Math.max(0, Math.min(1, (renderTime - s0.t) / timeSpan));
 
     return {
       s: slot,
@@ -817,54 +1077,60 @@ export class MultiplayerClient {
       z: p0.z + (p1.z - p0.z) * alpha,
       vx: p0.vx + (p1.vx - p0.vx) * alpha,
       vz: p0.vz + (p1.vz - p0.vz) * alpha,
-      sw: p1.sw,
-      sp: p1.sp,
-      ss: p1.ss,
-      st: p1.st,
+      sw: alpha > 0.5 ? p1.sw : p0.sw,
+      sp: p0.sp + (p1.sp - p0.sp) * alpha,
+      ss: alpha > 0.5 ? p1.ss : p0.ss,
+      st: alpha > 0.5 ? p1.st : p0.st,
     };
   }
 
   /**
-   * Smoothly correct ball position (never teleport)
+   * Smooth ball position without teleportation (never jumps unless error > 2.0m)
    */
-  public getSmoothedBall(currentBall: Vector3D, dt: number): Vector3D {
-    if (this.snapshotBuffer.length === 0) return { ...currentBall };
-    const latest = this.snapshotBuffer[this.snapshotBuffer.length - 1];
-    const target: Vector3D = { x: latest.b[0], y: latest.b[1], z: latest.b[2] };
+  public getSmoothedBall(currentPos: Vector3D, dt: number): Vector3D | null {
+    if (this.snapshotBuffer.length === 0) return null;
 
-    // Exponential smoothing factor (~12 / second)
-    const blend = 1.0 - Math.exp(-14.0 * dt);
+    const latest = this.snapshotBuffer[this.snapshotBuffer.length - 1];
+    const b = latest.b;
+    const target: Vector3D = { x: b[0], y: b[1], z: b[2] };
+
+    const dist = Math.hypot(target.x - currentPos.x, target.z - currentPos.z);
+    if (dist > 2.0) {
+      // Large divergence: snap
+      return target;
+    }
+
+    // Smooth exponential blend
+    const blendFactor = Math.min(1.0, dt * 18.0);
     return {
-      x: currentBall.x + (target.x - currentBall.x) * blend,
-      y: currentBall.y + (target.y - currentBall.y) * blend,
-      z: currentBall.z + (target.z - currentBall.z) * blend,
+      x: currentPos.x + (target.x - currentPos.x) * blendFactor,
+      y: currentPos.y + (target.y - currentPos.y) * blendFactor,
+      z: currentPos.z + (target.z - currentPos.z) * blendFactor,
     };
   }
 
-  public getLatestBallState(): {
-    position: Vector3D;
-    velocity: Vector3D;
-    inPlay: boolean;
-    lastHitter: Side | null;
-    bounceCount: number;
-  } | null {
-    if (this.snapshotBuffer.length === 0) return null;
-    const s = this.snapshotBuffer[this.snapshotBuffer.length - 1];
+  public getDebugStats() {
     return {
-      position: { x: s.b[0], y: s.b[1], z: s.b[2] },
-      velocity: { x: s.b[3], y: s.b[4], z: s.b[5] },
-      inPlay: s.b[6],
-      lastHitter: s.b[7],
-      bounceCount: s.b[8],
+      snapshotRateHz: this.currentSnapshotRateHz,
+      packetLossPercent: this.currentPacketLossPercent,
+      bufferHealthMs: Math.round(this.adaptiveDelayMs),
+      transport: this.broadcastChannel ? 'BroadcastChannel (Local Tab)' : 'WebRTC Dual-Channel (Reliable + Unreliable UDP)',
     };
   }
 
   public disconnect() {
+    if (this.joinTimeoutTimer) clearTimeout(this.joinTimeoutTimer);
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+    if (this.watchdogInterval) clearInterval(this.watchdogInterval);
+
     if (this.isHost) {
-      this.sendTransportMessage({ type: 'host_leave', from: this.myPlayerId });
+      this.sendReliableMessage({ type: 'host_leave' });
     }
-    if (this.pingInterval) clearInterval(this.pingInterval);
-    if (this.connectionHealthCheck) clearInterval(this.connectionHealthCheck);
+
+    this.reliableConnections.forEach((conn) => conn.close());
+    this.unreliableConnections.forEach((conn) => conn.close());
+    this.reliableConnections.clear();
+    this.unreliableConnections.clear();
 
     if (this.broadcastChannel) {
       try {
@@ -880,12 +1146,10 @@ export class MultiplayerClient {
       this.peer = null;
     }
 
-    this.connections.clear();
-    this.hostConnection = null;
     this.isConnected = false;
-    this.isHost = false;
-    this.currentRoomId = null;
+    this.isInMatch = false;
     this.snapshotBuffer = [];
+    this.currentRoomId = null;
     this.callbacks.onConnectionStatusChanged?.('disconnected');
   }
 }

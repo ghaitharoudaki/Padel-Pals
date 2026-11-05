@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Users,
   Copy,
@@ -9,26 +9,28 @@ import {
   Bot,
   User,
   ShieldAlert,
-  ArrowRightLeft,
   Wifi,
-  Sparkles,
   Zap,
+  Settings2,
 } from 'lucide-react';
 import { LobbySlot } from '../game/multiplayer';
+import { RoomConfig } from '../game/types';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onCreateRoom: (customCode?: string) => void;
+  onCreateRoom: (mode: '1v1' | '2v2', customCode?: string) => void;
   onJoinRoom: (roomId: string) => void;
   onQuickMatch: () => void;
   onSlotChange: (slot: 1 | 2 | 3 | 4) => void;
   onToggleReady: () => void;
   onToggleBotSlot: (slot: 1 | 2 | 3 | 4) => void;
   onFillBots: () => void;
-  onStartMatch: (mode: '1v1' | '2v2') => void;
+  onStartMatch: () => void;
   onLeaveRoom: () => void;
+  onUpdateConfig: (partial: Partial<RoomConfig>) => void;
   currentRoomId: string | null;
+  roomConfig: RoomConfig;
   slots: LobbySlot[];
   mySlot: 1 | 2 | 3 | 4;
   isHost: boolean;
@@ -52,7 +54,9 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
   onFillBots,
   onStartMatch,
   onLeaveRoom,
+  onUpdateConfig,
   currentRoomId,
+  roomConfig,
   slots,
   mySlot,
   isHost,
@@ -65,7 +69,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
 }) => {
   const [inputCode, setInputCode] = useState('');
   const [copied, setCopied] = useState(false);
-  const [matchMode, setMatchMode] = useState<'1v1' | '2v2'>('2v2');
+  const [selectedCreateMode, setSelectedCreateMode] = useState<'1v1' | '2v2'>('2v2');
 
   if (!isOpen) return null;
 
@@ -87,6 +91,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
   const mySlotObj = slots.find((s) => s.slot === mySlot);
   const isMySlotReady = mySlotObj?.isReady || false;
   const allHumansReady = slots.every((s) => s.isBot || !s.playerId || s.isReady);
+  const is1v1 = roomConfig.mode === '1v1';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
@@ -101,7 +106,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
         </button>
 
         {/* Modal Header */}
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex items-center gap-3 mb-4">
           <div className="p-3 bg-blue-600 text-white rounded-2xl border-3 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
             <Users className="w-6 h-6 stroke-[2.5]" />
           </div>
@@ -110,30 +115,9 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
               Online Multiplayer
             </h2>
             <p className="text-xs text-zinc-400 font-medium">
-              Host-authoritative online Padel with real-time prediction & zero lag
+              Host-authoritative 60Hz Padel with dual-channel WebRTC & zero lag
             </p>
           </div>
-        </div>
-
-        <div className="mb-4 flex gap-2" role="group" aria-label="Online match mode">
-          <button
-            type="button"
-            onClick={() => setMatchMode('2v2')}
-            className={`flex-1 rounded-xl border-2 px-3 py-2 text-sm font-black uppercase ${
-              matchMode === '2v2' ? 'border-blue-400 bg-blue-600' : 'border-zinc-700 bg-zinc-800'
-            }`}
-          >
-            2v2 Doubles
-          </button>
-          <button
-            type="button"
-            onClick={() => setMatchMode('1v1')}
-            className={`flex-1 rounded-xl border-2 px-3 py-2 text-sm font-black uppercase ${
-              matchMode === '1v1' ? 'border-emerald-400 bg-emerald-600' : 'border-zinc-700 bg-zinc-800'
-            }`}
-          >
-            1v1 Singles
-          </button>
         </div>
 
         {/* Error Notification */}
@@ -148,7 +132,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
         {connectionStatus === 'reconnecting' && (
           <div className="mb-4 p-3 bg-amber-500/20 border-2 border-amber-500/50 rounded-2xl flex items-center gap-2 text-amber-300 text-sm font-semibold animate-pulse">
             <Wifi className="w-5 h-5 text-amber-400 flex-shrink-0" />
-            <span>Reconnecting to match...</span>
+            <span>Reconnecting to match... (retrying peer connection)</span>
           </div>
         )}
 
@@ -156,14 +140,14 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
           /* ========================================== */
           /* ROOM SELECT / CREATE / JOIN SCREEN        */
           /* ========================================== */
-          <div className="space-y-5 overflow-y-auto pr-1">
+          <div className="space-y-4 overflow-y-auto pr-1">
             {/* Quick Match Block */}
             <div className="p-4 bg-zinc-800/80 border-3 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-between">
               <div>
                 <div className="font-black text-lg text-emerald-400 uppercase tracking-wide font-['Lilita_One',sans-serif]">
                   Quick Match
                 </div>
-                <div className="text-xs text-zinc-400">Jump right into an open match or instant host</div>
+                <div className="text-xs text-zinc-400">Jump right into an open room or instant host</div>
               </div>
               <button
                 onClick={onQuickMatch}
@@ -205,12 +189,37 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
                   <div className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
                     Create Custom Room
                   </div>
-                  <div className="text-xs text-zinc-400 mb-4 leading-relaxed">
-                    Host a new match with your own 5-character code. You control the room, slots, and bots.
+                  {/* Mode selector before create */}
+                  <div className="flex gap-2 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCreateMode('2v2')}
+                      className={`flex-1 py-1.5 rounded-lg border text-xs font-black uppercase transition ${
+                        selectedCreateMode === '2v2'
+                          ? 'bg-blue-600 border-blue-400 text-white'
+                          : 'bg-zinc-900 border-zinc-700 text-zinc-400'
+                      }`}
+                    >
+                      2v2 Doubles
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCreateMode('1v1')}
+                      className={`flex-1 py-1.5 rounded-lg border text-xs font-black uppercase transition ${
+                        selectedCreateMode === '1v1'
+                          ? 'bg-emerald-600 border-emerald-400 text-white'
+                          : 'bg-zinc-900 border-zinc-700 text-zinc-400'
+                      }`}
+                    >
+                      1v1 Singles
+                    </button>
+                  </div>
+                  <div className="text-xs text-zinc-400 mb-3 leading-relaxed">
+                    Host a match with a 5-character code. You control room rules, slots, and bots.
                   </div>
                 </div>
                 <button
-                  onClick={() => onCreateRoom()}
+                  onClick={() => onCreateRoom(selectedCreateMode)}
                   className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-sm uppercase rounded-xl border-2 border-black transition active:scale-95 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center gap-2"
                 >
                   <Radio className="w-4 h-4 stroke-[2.5]" />
@@ -221,9 +230,9 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
           </div>
         ) : (
           /* ========================================== */
-          /* ACTIVE 4-SLOT LOBBY SCREEN                 */
+          /* ACTIVE LOBBY SCREEN (1v1 or 2v2)           */
           /* ========================================== */
-          <div className="space-y-4 overflow-y-auto pr-1 flex-1">
+          <div className="space-y-3.5 overflow-y-auto pr-1 flex-1">
             {/* Room Info Header */}
             <div className="p-3 bg-zinc-950 border-3 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -254,15 +263,93 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
                 <span className="text-xs px-2 py-1 bg-zinc-800 rounded-lg border border-zinc-700 font-bold uppercase text-zinc-300">
                   {isHost ? 'Host' : 'Client'}
                 </span>
+                <span
+                  className={`text-xs px-2.5 py-1 rounded-lg border font-black uppercase ${
+                    is1v1
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                  }`}
+                >
+                  {is1v1 ? '1v1' : '2v2'}
+                </span>
               </div>
             </div>
 
-            {/* 4-Slot Grid (2 Teams: Blue South vs Red North) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Host Rules Bar */}
+            {isHost ? (
+              <div className="p-3 bg-zinc-800/60 border-2 border-zinc-700 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 font-bold uppercase text-zinc-300">
+                  <Settings2 className="w-4 h-4 text-amber-400" />
+                  <span>Room Config:</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-400 font-medium">Mode:</span>
+                  <div className="flex rounded-lg border border-zinc-700 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateConfig({ mode: '1v1' })}
+                      className={`px-2.5 py-1 text-xs font-black uppercase transition ${
+                        is1v1 ? 'bg-emerald-600 text-white' : 'bg-zinc-900 text-zinc-400'
+                      }`}
+                    >
+                      1v1 (2 Slots)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateConfig({ mode: '2v2' })}
+                      className={`px-2.5 py-1 text-xs font-black uppercase transition ${
+                        !is1v1 ? 'bg-blue-600 text-white' : 'bg-zinc-900 text-zinc-400'
+                      }`}
+                    >
+                      2v2 (4 Slots)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-400 font-medium">Length:</span>
+                  <select
+                    value={roomConfig.matchLength}
+                    onChange={(e) => onUpdateConfig({ matchLength: e.target.value as any })}
+                    className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
+                  >
+                    <option value="1_game">1 Game</option>
+                    <option value="1_set">1 Set</option>
+                    <option value="3_games">3 Games</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-400 font-medium">On Disconnect:</span>
+                  <select
+                    value={roomConfig.onClientLeave}
+                    onChange={(e) => onUpdateConfig({ onClientLeave: e.target.value as any })}
+                    className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
+                  >
+                    <option value="replace_with_bot">Replace with Bot</option>
+                    <option value="end_match">End Match</option>
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div className="p-2.5 bg-zinc-800/40 border border-zinc-700/80 rounded-xl flex items-center justify-between text-xs text-zinc-400">
+                <span>
+                  Host Rules: <strong className="text-zinc-200">{is1v1 ? '1v1 Singles' : '2v2 Doubles'}</strong> •{' '}
+                  <strong className="text-zinc-200">{roomConfig.matchLength.replace('_', ' ')}</strong>
+                </span>
+                <span className="text-emerald-400 font-semibold">
+                  You are {mySlotObj ? `P${mySlotObj.slot} (${mySlotObj.team === 'blue' ? 'Team Blue' : 'Team Red'})` : 'Spectating'}
+                </span>
+              </div>
+            )}
+
+            {/* Slots Grid */}
+            <div className={`grid gap-3 ${is1v1 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2'}`}>
               {/* Team Blue (South Court) */}
               <div className="p-3 bg-blue-950/40 border-3 border-blue-600/50 rounded-2xl space-y-2">
                 <div className="text-xs font-black uppercase tracking-wider text-blue-400 flex items-center justify-between">
-                  <span>Team Blue (Near Court)</span>
+                  <span>Team Blue (South Court)</span>
                   <span className="text-[10px] text-blue-300/70">Receives 1st</span>
                 </div>
                 {slots
@@ -273,7 +360,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
               {/* Team Red (North Court) */}
               <div className="p-3 bg-red-950/40 border-3 border-red-600/50 rounded-2xl space-y-2">
                 <div className="text-xs font-black uppercase tracking-wider text-red-400 flex items-center justify-between">
-                  <span>Team Red (Far Court)</span>
+                  <span>Team Red (North Court)</span>
                   <span className="text-[10px] text-red-300/70">Serves 1st</span>
                 </div>
                 {slots
@@ -282,38 +369,19 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Host Controls */}
-            {isHost && (
-              <div className="p-3 bg-zinc-800/40 border-2 border-zinc-700/60 rounded-2xl flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-zinc-400">
-                  Host Controls: Setup remaining slots
-                </span>
+            {/* Host Fill Bots */}
+            {isHost && !is1v1 && (
+              <div className="p-2.5 bg-zinc-800/40 border border-zinc-700/60 rounded-xl flex items-center justify-between text-xs">
+                <span className="text-zinc-400 font-medium">Quick Bot Fill:</span>
                 <button
                   onClick={onFillBots}
-                  className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-xs font-bold uppercase rounded-lg border border-zinc-600 flex items-center gap-1.5 transition"
+                  className="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-xs font-bold uppercase rounded-lg border border-zinc-600 flex items-center gap-1.5 transition"
                 >
                   <Bot className="w-3.5 h-3.5" />
-                  Fill Empty with Bots
+                  Fill Remaining with Bots
                 </button>
               </div>
             )}
-
-            {/* Latency & Packet Loss Debug Toggle */}
-            <div className="p-2.5 bg-zinc-950 border border-zinc-800 rounded-xl flex items-center justify-between text-xs">
-              <span className="text-zinc-400 font-medium">
-                Simulate Network Latency (150ms + 5% loss)
-              </span>
-              <button
-                onClick={() => onToggleSimulatedLatency(!simulatedLatency)}
-                className={`px-2.5 py-1 rounded-lg font-bold uppercase transition ${
-                  simulatedLatency
-                    ? 'bg-amber-500 text-zinc-950'
-                    : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                }`}
-              >
-                {simulatedLatency ? 'ON (Simulating)' : 'OFF'}
-              </button>
-            </div>
 
             {/* Action Buttons */}
             <div className="flex gap-3 pt-2">
@@ -337,7 +405,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
 
               {isHost && (
                 <button
-                  onClick={() => onStartMatch(matchMode)}
+                  onClick={onStartMatch}
                   disabled={!allHumansReady}
                   className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-black text-sm uppercase rounded-xl border-2 border-black transition active:scale-95 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center gap-2"
                 >
@@ -370,7 +438,6 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
         }`}
       >
         <div className="flex items-center gap-2.5">
-          {/* Avatar Color / Icon Badge */}
           <div
             className="w-8 h-8 rounded-lg border-2 border-black flex items-center justify-center font-bold text-xs"
             style={{
@@ -379,72 +446,62 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
           >
             {slot.isBot ? (
               <Bot className="w-4 h-4 text-white" />
-            ) : slot.playerId ? (
-              <User className="w-4 h-4 text-white" />
             ) : (
-              <span className="text-zinc-500">?</span>
+              <User className="w-4 h-4 text-white" />
             )}
           </div>
-
           <div>
-            <div className="text-xs font-bold text-white flex items-center gap-1.5">
-              <span>{slot.playerName}</span>
+            <div className="text-xs font-black uppercase tracking-wide flex items-center gap-1.5">
+              <span>
+                P{slot.slot}: {slot.playerName}
+              </span>
               {isMe && (
-                <span className="px-1.5 py-0.2 bg-amber-400 text-zinc-950 font-black text-[9px] rounded uppercase">
+                <span className="text-[9px] bg-amber-400 text-zinc-950 font-black px-1.5 py-0.2 rounded">
                   YOU
                 </span>
               )}
               {slot.isHost && (
-                <span className="px-1.5 py-0.2 bg-blue-500 text-white font-black text-[9px] rounded uppercase">
+                <span className="text-[9px] bg-blue-500 text-white font-bold px-1 py-0.2 rounded">
                   HOST
                 </span>
               )}
             </div>
-            <div className="text-[10px] text-zinc-400 capitalize">
-              {slot.zone} Zone • {slot.appearance.jerseyStyle || 'uniform'}
+            <div className="text-[10px] text-zinc-400 font-medium">
+              {slot.team === 'blue' ? 'Team Blue (South)' : 'Team Red (North)'} •{' '}
+              {slot.isBot ? 'Bot Player' : slot.playerId ? 'Human' : 'Open Slot'}
             </div>
           </div>
         </div>
 
-        {/* Slot Controls / Status */}
         <div className="flex items-center gap-1.5">
-          {slot.isBot ? (
-            <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700 font-bold">
-              BOT
+          {slot.isReady ? (
+            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-lg flex items-center gap-1">
+              <Check className="w-3 h-3" /> Ready
             </span>
           ) : slot.playerId ? (
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded font-black uppercase ${
-                slot.isReady
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-              }`}
-            >
-              {slot.isReady ? 'READY' : 'WAITING'}
+            <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded-lg">
+              Waiting
             </span>
-          ) : (
-            <span className="text-[10px] text-zinc-500 font-semibold uppercase">EMPTY</span>
-          )}
+          ) : null}
 
-          {/* Switch slot button if not current slot */}
+          {/* Switch to this slot button */}
           {!isMe && !isOccupiedByOther && (
             <button
               onClick={() => onSlotChange(slot.slot)}
-              className="p-1 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded border border-zinc-700 transition"
-              title="Switch to this slot"
+              className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] uppercase font-bold rounded-lg border border-zinc-700 transition"
             >
-              <ArrowRightLeft className="w-3.5 h-3.5" />
+              Take Slot
             </button>
           )}
 
-          {/* Host toggle bot slot */}
+          {/* Host Toggle Bot */}
           {isHost && !slot.playerId && (
             <button
               onClick={() => onToggleBotSlot(slot.slot)}
-              className="p-1 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded border border-zinc-700 transition text-[10px]"
-              title="Toggle Bot/Empty"
+              className="p-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg border border-zinc-700 transition"
+              title={slot.isBot ? 'Remove Bot' : 'Add Bot'}
             >
-              {slot.isBot ? 'Remove' : 'Add Bot'}
+              <Bot className="w-3.5 h-3.5" />
             </button>
           )}
         </div>

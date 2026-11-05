@@ -13,6 +13,7 @@ import {
   DEFAULT_APPEARANCE,
   PlayerCustomization,
   PlayerState,
+  RoomConfig,
   ScoreState,
   ScreenState,
   ShotType,
@@ -54,6 +55,7 @@ import { InputManager, SwingIntent } from './game/input';
 import { MultiplayerClient, LobbySlot, ClientInputPacket } from './game/multiplayer';
 import { GameHUD } from './components/GameHUD';
 import { DebugOverlay } from './components/DebugOverlay';
+import { NetDebugOverlay, NetDebugStats } from './components/NetDebugOverlay';
 import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
 import { CustomizerModal } from './components/CustomizerModal';
 import { ControlsGuideModal } from './components/ControlsGuideModal';
@@ -206,6 +208,26 @@ export default function App() {
   const [netErrorMessage, setNetErrorMessage] = useState<string | null>(null);
   const [pingMs, setPingMs] = useState<number>(0);
   const [simulatedLatency, setSimulatedLatency] = useState<boolean>(false);
+  const [showNetDebug, setShowNetDebug] = useState<boolean>(false);
+  const [roomConfig, setRoomConfig] = useState<RoomConfig>({
+    mode: '2v2',
+    matchLength: '1_set',
+    difficulty: 'pro',
+    onClientLeave: 'replace_with_bot',
+    goldenPoint: false,
+  });
+
+  // F4 Key listener for Net Debug Overlay
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F4') {
+        e.preventDefault();
+        setShowNetDebug((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Authoritative player slots
   const p1Ref = useRef<PlayerState>(
@@ -661,23 +683,38 @@ export default function App() {
 
     // Swing execution with ONE hit button and auto-aim
     function executeSwing(intent: SwingIntent) {
-      const p1 = p1Ref.current;
+      const isOnlineClient =
+        isOnlineMode(gameModeRef.current) && !multiplayerClientRef.current?.isHost;
+      const clientSlot = multiplayerClientRef.current?.mySlot || 2;
+      const localPlayer = !isOnlineClient
+        ? p1Ref.current
+        : clientSlot === 2
+        ? p2Ref.current
+        : clientSlot === 3
+        ? p3Ref.current
+        : clientSlot === 4
+        ? p4Ref.current
+        : p1Ref.current;
+      const localAvatar = !isOnlineClient
+        ? p1Avatar
+        : clientSlot === 2
+        ? p2Avatar
+        : clientSlot === 3
+        ? p3Avatar
+        : clientSlot === 4
+        ? p4Avatar
+        : p1Avatar;
+
       const b = ballRef.current;
 
       // 1. Legal Underhand Serve
-      if (p1.isServing && !b.inPlay) {
-        p1.isSwinging = true;
-        p1.racketSwingProgress = 0;
-        p1.swingSide = 'serve';
+      if (localPlayer.isServing && !b.inPlay) {
+        localPlayer.isSwinging = true;
+        localPlayer.racketSwingProgress = 0;
+        localPlayer.swingSide = 'serve';
 
         const targetBox = getServeTargetBox(scoreRef.current);
-        const newBall = executePadelServe(b, p1.side, targetBox, intent.power);
-        ballRef.current = newBall;
-        p1.isServing = false;
-        padelAudio.playRacketHit(intent.power, 'flat', 'GOOD', p1.position);
-        padelAudio.updateRallyTension(scoreRef.current.rallyCount, true);
-        triggerHitFeedback('UNDERHAND SERVE IN!');
-        if (isOnlineMode(gameModeRef.current) && !multiplayerClientRef.current?.isHost) {
+        if (isOnlineClient) {
           multiplayerClientRef.current?.sendInput({
             dt: 0.016,
             moveX: 0,
@@ -687,28 +724,38 @@ export default function App() {
             shotType: 'flat',
             power: intent.power,
             aimX: targetBox === 'left' ? -2.5 : 2.5,
-            aimZ: -6.0,
+            aimZ: localPlayer.side === 'south' ? -6.0 : 6.0,
           });
+          padelAudio.playRacketHit(intent.power, 'flat', 'GOOD', localPlayer.position);
+          localAvatar.triggerHitPop();
+          return;
         }
+
+        const newBall = executePadelServe(b, localPlayer.side, targetBox, intent.power);
+        ballRef.current = newBall;
+        localPlayer.isServing = false;
+        padelAudio.playRacketHit(intent.power, 'flat', 'GOOD', localPlayer.position);
+        padelAudio.updateRallyTension(scoreRef.current.rallyCount, true);
+        triggerHitFeedback('UNDERHAND SERVE IN!');
         return;
       }
 
-      p1.isSwinging = true;
-      p1.racketSwingProgress = 0;
+      localPlayer.isSwinging = true;
+      localPlayer.racketSwingProgress = 0;
 
       // Forehand vs Backhand detection
-      const dx = b.position.x - p1.position.x;
-      p1.swingSide = b.position.y > 1.65 ? 'overhead' : (dx >= 0 ? 'forehand' : 'backhand');
+      const dx = b.position.x - localPlayer.position.x;
+      localPlayer.swingSide = b.position.y > 1.65 ? 'overhead' : (dx >= 0 ? 'forehand' : 'backhand');
 
       // Check contact timing quality
-      const timing = evaluateContactTiming(p1.position, b.position, p1.side);
+      const timing = evaluateContactTiming(localPlayer.position, b.position, localPlayer.side);
 
       if (timing.quality !== 'OUT_OF_REACH') {
         // Determine shot type using modifiers
-        const isBajadaEligible = isBajadaWindow(b, p1.position, p1.side);
+        const isBajadaEligible = isBajadaWindow(b, localPlayer.position, localPlayer.side);
         let selectedShot: ShotType = intent.shot;
 
-        if (intent.isJumpHit || p1.isJumping || b.position.y > 1.65) {
+        if (intent.isJumpHit || localPlayer.isJumping || b.position.y > 1.65) {
           selectedShot = 'smash';
         } else if (isBajadaEligible) {
           selectedShot = 'bajada';
@@ -718,13 +765,32 @@ export default function App() {
 
         const effectivePower = Math.min(1.0, intent.power * timing.powerMultiplier);
         const aimTarget = intent.targetAim || mouseAimRef.current;
+
+        if (isOnlineClient) {
+          padelAudio.playRacketHit(effectivePower, selectedShot, timing.quality, localPlayer.position);
+          localAvatar.triggerHitPop();
+          multiplayerClientRef.current?.sendInput({
+            dt: 0.016,
+            moveX: 0,
+            moveZ: 0,
+            isJumping: localPlayer.isJumping,
+            wantsSwing: true,
+            shotType: selectedShot,
+            power: effectivePower,
+            aimX: aimTarget.x,
+            aimZ: aimTarget.z,
+            bias: intent.bias,
+          });
+          return;
+        }
+
         const struck = strikeBallWithRacket(
           b,
-          p1.side,
+          localPlayer.side,
           selectedShot,
           effectivePower,
           aimTarget,
-          p1.position,
+          localPlayer.position,
           intent.bias,
           timing.quality,
           aimAssistRef.current
@@ -733,8 +799,8 @@ export default function App() {
         currentShotRef.current = selectedShot;
         setCurrentShot(selectedShot);
 
-        padelAudio.playRacketHit(effectivePower, selectedShot, timing.quality, p1.position);
-        p1Avatar.triggerHitPop();
+        padelAudio.playRacketHit(effectivePower, selectedShot, timing.quality, localPlayer.position);
+        localAvatar.triggerHitPop();
 
         // Crowd reaction on smashes: hands up in the air!
         if (selectedShot === 'smash') {
@@ -770,21 +836,6 @@ export default function App() {
           slowMotionUntilRef.current = performance.now() + 140;
           slowMotionFactorRef.current = 0.35;
           triggerHitFeedback('BAJADA! 💥');
-        }
-
-        if (isOnlineMode(gameModeRef.current) && !multiplayerClientRef.current?.isHost) {
-          multiplayerClientRef.current?.sendInput({
-            dt: 0.016,
-            moveX: 0,
-            moveZ: 0,
-            isJumping: p1.isJumping,
-            wantsSwing: true,
-            shotType: selectedShot,
-            power: effectivePower,
-            aimX: mouseAimRef.current.x,
-            aimZ: mouseAimRef.current.z,
-            bias: intent.bias,
-          });
         }
       } else {
         triggerHitFeedback('WHIFF (MISSED)');
@@ -898,14 +949,18 @@ export default function App() {
             onlineMatch && !multiplayerClientRef.current?.isHost;
 
           if (isOnlineClient) {
-            // 1. Send client input at 30-60 Hz
-            if (now - lastInputSendTime > 20) {
+            const clientSlot = multiplayerClientRef.current?.mySlot || 2;
+            const localPlayer =
+              clientSlot === 2 ? p2 : clientSlot === 3 ? p3 : clientSlot === 4 ? p4 : p1;
+
+            // 1. Send client input at 60 Hz with 3-packet history redundancy
+            if (now - lastInputSendTime > 16) {
               const moveInput = inputManager.getMovementInput();
               multiplayerClientRef.current?.sendInput({
                 dt: effectiveDt,
                 moveX: moveInput.x,
                 moveZ: moveInput.z,
-                isJumping: p1.isJumping,
+                isJumping: localPlayer.isJumping,
                 wantsSwing: false,
                 shotType: currentShotRef.current,
                 power: chargePowerRef.current,
@@ -915,61 +970,44 @@ export default function App() {
               lastInputSendTime = now;
             }
 
-            // 2. Client-side prediction for local player movement
+            // 2. Client-side prediction for local player movement ONLY
             if (!isFrozenRef.current) {
               const moveInput = inputManager.getMovementInput();
-              updatePlayerMovement(p1, moveInput, effectiveDt, isDoubles);
+              updatePlayerMovement(localPlayer, moveInput, effectiveDt, isDoubles);
             }
-            if (p1.isSwinging) {
-              p1.racketSwingProgress += effectiveDt * 4.8;
-              if (p1.racketSwingProgress >= 1.0) {
-                p1.isSwinging = false;
-                p1.racketSwingProgress = 0;
+            if (localPlayer.isSwinging) {
+              localPlayer.racketSwingProgress += effectiveDt * 4.8;
+              if (localPlayer.racketSwingProgress >= 1.0) {
+                localPlayer.isSwinging = false;
+                localPlayer.racketSwingProgress = 0;
               }
             }
 
-            // 3. Interpolate remote players from buffer
-            const remoteHumanSlot = multiplayerClientRef.current?.mySlot === 2 ? 1 : 2;
-            const interpP2 = multiplayerClientRef.current?.getInterpolatedPlayer(remoteHumanSlot);
-            if (interpP2) {
-              p2.position.x = interpP2.x;
-              p2.position.y = interpP2.y;
-              p2.position.z = interpP2.z;
-              p2.velocity.x = interpP2.vx;
-              p2.velocity.z = interpP2.vz;
-              p2.isSwinging = interpP2.sw;
-              p2.racketSwingProgress = interpP2.sp;
-              p2.swingSide = interpP2.ss;
-              p2.currentShotType = interpP2.st;
-            }
+            // 3. Interpolate remote players from buffer with adaptive delay
+            const allPlayers = [
+              { slot: 1, p: p1 },
+              { slot: 2, p: p2 },
+              { slot: 3, p: p3 },
+              { slot: 4, p: p4 },
+            ];
 
-            const interpP3 = multiplayerClientRef.current?.getInterpolatedPlayer(3);
-            if (interpP3) {
-              p3.position.x = interpP3.x;
-              p3.position.y = interpP3.y;
-              p3.position.z = interpP3.z;
-              p3.velocity.x = interpP3.vx;
-              p3.velocity.z = interpP3.vz;
-              p3.isSwinging = interpP3.sw;
-              p3.racketSwingProgress = interpP3.sp;
-              p3.swingSide = interpP3.ss;
-              p3.currentShotType = interpP3.st;
-            }
+            allPlayers.forEach(({ slot, p }) => {
+              if (slot === clientSlot) return; // Never overwrite local predicted player
+              const interp = multiplayerClientRef.current?.getInterpolatedPlayer(slot);
+              if (interp) {
+                p.position.x = interp.x;
+                p.position.y = interp.y;
+                p.position.z = interp.z;
+                p.velocity.x = interp.vx;
+                p.velocity.z = interp.vz;
+                p.isSwinging = interp.sw;
+                p.racketSwingProgress = interp.sp;
+                p.swingSide = interp.ss;
+                p.currentShotType = interp.st;
+              }
+            });
 
-            const interpP4 = multiplayerClientRef.current?.getInterpolatedPlayer(4);
-            if (interpP4) {
-              p4.position.x = interpP4.x;
-              p4.position.y = interpP4.y;
-              p4.position.z = interpP4.z;
-              p4.velocity.x = interpP4.vx;
-              p4.velocity.z = interpP4.vz;
-              p4.isSwinging = interpP4.sw;
-              p4.racketSwingProgress = interpP4.sp;
-              p4.swingSide = interpP4.ss;
-              p4.currentShotType = interpP4.st;
-            }
-
-            // 4. Smooth ball position from authoritative host (never teleport)
+            // 4. Smooth ball position from authoritative host (never snap unless error > 2.0m)
             const smoothedBall = multiplayerClientRef.current?.getSmoothedBall(
               ballRef.current.position,
               effectiveDt
@@ -1037,6 +1075,15 @@ export default function App() {
                 p3.racketSwingProgress = 0;
               }
             }
+          } else if (isDoubles && !isOnlineClient) {
+            advancePlayer(p3, effectiveDt);
+            if (p3.isSwinging) {
+              p3.racketSwingProgress += effectiveDt * 4.8;
+              if (p3.racketSwingProgress >= 1.0) {
+                p3.isSwinging = false;
+                p3.racketSwingProgress = 0;
+              }
+            }
           }
 
           // C. North Opponent (P2 Alejandro) AI Update
@@ -1085,43 +1132,61 @@ export default function App() {
                 p2.racketSwingProgress = 0;
               }
             }
-
-            // D. North Partner (P4 Mateo) AI Update
-            if (isDoubles && p4.isBot && !isOnlineClient) {
-              const p4Decision = updateBotAI(p4, ballRef.current, p3, botDifficultyRef.current, effectiveDt, true, p2);
-              p4.velocity = p4Decision.velocity;
-              advancePlayer(p4, effectiveDt);
-              p4.swingSide = p4Decision.swingSide;
-              p4.currentShotType = p4Decision.shotType;
-              p4.state = p4Decision.stateDescription;
-
-              if (p4Decision.wantsToSwing) {
-                p4.isSwinging = true;
-                p4.racketSwingProgress = 0;
-                const struck = strikeBallWithRacket(
-                  ballRef.current,
-                  p4.side,
-                  p4Decision.shotType,
-                  p4Decision.power,
-                  p4Decision.targetAim,
-                  p4.position,
-                  undefined,
-                  p4Decision.timingQuality
-                );
-                ballRef.current = struck;
-                padelAudio.playRacketHit(p4Decision.power, p4Decision.shotType, p4Decision.timingQuality, p4.position);
-                p4Avatar.triggerHitPop();
-                if (p4Decision.shotType === 'smash') {
-                  crowdSystem.triggerReaction('smash', 1.4);
-                }
+          } else if (!isOnlineClient) {
+            advancePlayer(p2, effectiveDt);
+            if (p2.isSwinging) {
+              p2.racketSwingProgress += effectiveDt * 4.8;
+              if (p2.racketSwingProgress >= 1.0) {
+                p2.isSwinging = false;
+                p2.racketSwingProgress = 0;
               }
+            }
+          }
 
-              if (p4.isSwinging) {
-                p4.racketSwingProgress += effectiveDt * 4.8;
-                if (p4.racketSwingProgress >= 1.0) {
-                  p4.isSwinging = false;
-                  p4.racketSwingProgress = 0;
-                }
+          // D. North Partner (P4 Mateo) AI Update
+          if (isDoubles && p4.isBot && !isOnlineClient) {
+            const p4Decision = updateBotAI(p4, ballRef.current, p3, botDifficultyRef.current, effectiveDt, true, p2);
+            p4.velocity = p4Decision.velocity;
+            advancePlayer(p4, effectiveDt);
+            p4.swingSide = p4Decision.swingSide;
+            p4.currentShotType = p4Decision.shotType;
+            p4.state = p4Decision.stateDescription;
+
+            if (p4Decision.wantsToSwing) {
+              p4.isSwinging = true;
+              p4.racketSwingProgress = 0;
+              const struck = strikeBallWithRacket(
+                ballRef.current,
+                p4.side,
+                p4Decision.shotType,
+                p4Decision.power,
+                p4Decision.targetAim,
+                p4.position,
+                undefined,
+                p4Decision.timingQuality
+              );
+              ballRef.current = struck;
+              padelAudio.playRacketHit(p4Decision.power, p4Decision.shotType, p4Decision.timingQuality, p4.position);
+              p4Avatar.triggerHitPop();
+              if (p4Decision.shotType === 'smash') {
+                crowdSystem.triggerReaction('smash', 1.4);
+              }
+            }
+
+            if (p4.isSwinging) {
+              p4.racketSwingProgress += effectiveDt * 4.8;
+              if (p4.racketSwingProgress >= 1.0) {
+                p4.isSwinging = false;
+                p4.racketSwingProgress = 0;
+              }
+            }
+          } else if (isDoubles && !isOnlineClient) {
+            advancePlayer(p4, effectiveDt);
+            if (p4.isSwinging) {
+              p4.racketSwingProgress += effectiveDt * 4.8;
+              if (p4.racketSwingProgress >= 1.0) {
+                p4.isSwinging = false;
+                p4.racketSwingProgress = 0;
               }
             }
           }
@@ -1465,17 +1530,29 @@ export default function App() {
             isDoubles
           );
 
+          const clientSlot = multiplayerClientRef.current?.mySlot || 1;
+          const myPlayer =
+            isOnlineMode(gameModeRef.current) && !multiplayerClientRef.current?.isHost
+              ? clientSlot === 2
+                ? p2
+                : clientSlot === 3
+                ? p3
+                : clientSlot === 4
+                ? p4
+                : p1
+              : p1;
+
           // Camera update smoothly following ball and player
-          cameraController.update(dt, isMenu, p1.position, ballMesh.position);
+          cameraController.update(dt, isMenu, myPlayer.position, ballMesh.position);
 
           // Spatial Audio Listener sync to 3D Camera
           cameraController.camera.getWorldDirection(camForwardVec);
           padelAudio.updateListener(cameraController.camera.position, camForwardVec);
 
           // Footstep audio on player athletic run
-          if (!isMenu && !isFrozenRef.current && Math.hypot(p1.velocity.x, p1.velocity.z) > 2.0) {
+          if (!isMenu && !isFrozenRef.current && Math.hypot(myPlayer.velocity.x, myPlayer.velocity.z) > 2.0) {
             if (now - lastFootstepTime > 320) {
-              padelAudio.playFootstep('turf', p1.position);
+              padelAudio.playFootstep('turf', myPlayer.position);
               lastFootstepTime = now;
             }
           }
@@ -1525,30 +1602,45 @@ export default function App() {
     gameModeRef.current = mode;
 
     const isD = !isSinglesMode(mode);
-    const localIsNorth = isOnlineMode(mode) && multiplayerClientRef.current?.mySlot === 2;
-    p1Ref.current.side = localIsNorth ? 'north' : 'south';
-    p1Ref.current.team = localIsNorth ? 'red' : 'blue';
-    p2Ref.current.side = localIsNorth ? 'south' : 'north';
-    p2Ref.current.team = localIsNorth ? 'blue' : 'red';
-    setPlayerPosition(p1Ref.current, { x: isD ? -2.0 : 0, y: 0, z: localIsNorth ? -7.2 : 7.2 });
+
+    // Fixed authoritative slots:
+    // Slot 1: South, Team Blue
+    // Slot 2: North, Team Red
+    // Slot 3: South, Team Blue (Partner)
+    // Slot 4: North, Team Red (Partner)
+    p1Ref.current.side = 'south';
+    p1Ref.current.team = 'blue';
+    p2Ref.current.side = 'north';
+    p2Ref.current.team = 'red';
+    p3Ref.current.side = 'south';
+    p3Ref.current.team = 'blue';
+    p4Ref.current.side = 'north';
+    p4Ref.current.team = 'red';
+
+    setPlayerPosition(p1Ref.current, { x: isD ? -2.0 : 0, y: 0, z: 7.2 });
+    setPlayerPosition(p2Ref.current, { x: isD ? -2.0 : 0, y: 0, z: -7.2 });
     setPlayerPosition(p3Ref.current, { x: 2.0, y: 0, z: 7.2 });
-    setPlayerPosition(p2Ref.current, { x: isD ? -2.0 : 0, y: 0, z: localIsNorth ? 7.2 : -7.2 });
     setPlayerPosition(p4Ref.current, { x: 2.0, y: 0, z: -7.2 });
+
+    p3Ref.current.mesh.visible = isD;
+    p4Ref.current.mesh.visible = isD;
+
     const servingSide = scoreRef.current.servingSide;
-    const server = servingSide === p1Ref.current.side ? p1Ref.current : p2Ref.current;
+    const server = servingSide === 'south' ? p1Ref.current : p2Ref.current;
     ballRef.current = createInitialBall(servingSide, server.position);
   };
 
   const ensureMultiplayerClient = () => {
     if (!multiplayerClientRef.current) {
       multiplayerClientRef.current = new MultiplayerClient({
-        onLobbyUpdated: (slots, hostStatus, assignedSlot) => {
+        onLobbyUpdated: (slots, hostStatus, assignedSlot, config) => {
           setLobbySlots([...slots]);
           setIsHost(hostStatus);
           setMySlot(assignedSlot);
           setIsNetConnected(true);
+          if (config) setRoomConfig(config);
 
-          // Sync appearances for all 4 slots
+          // Sync appearances for all slots
           slots.forEach((s) => {
             if (s.slot === 1) {
               p1Ref.current.name = s.playerName;
@@ -1573,40 +1665,40 @@ export default function App() {
             }
           });
         },
-        onMatchStarted: () => {
+        onMatchStarted: (config, _slots, servingSide, seed) => {
           setShowMultiplayer(false);
-          handleModeChange(onlineModeRef.current);
-          startMatchWithCountdown(onlineModeRef.current);
+          const targetMode: GameMode = config.mode === '1v1' ? 'online-1v1' : 'online-2v2';
+          setRoomConfig(config);
+          onlineModeRef.current = targetMode;
+          setGameMode(targetMode);
+          gameModeRef.current = targetMode;
+          handleModeChange(targetMode);
+          startMatchWithCountdown(targetMode, config.difficulty, config.matchLength);
         },
         onSnapshotReceived: (snapshot) => {
           if (multiplayerClientRef.current?.isHost) return;
 
           // Remote players position & animation updates
           snapshot.p.forEach((ps) => {
-            const clientIsNorth = multiplayerClientRef.current?.mySlot === 2;
-            const target = clientIsNorth
-              ? ps.s === 2
+            const target =
+              ps.s === 1
                 ? p1Ref.current
-                : ps.s === 1
+                : ps.s === 2
                 ? p2Ref.current
                 : ps.s === 3
                 ? p3Ref.current
-                : p4Ref.current
-              : ps.s === 1
-              ? p1Ref.current
-              : ps.s === 2
-              ? p2Ref.current
-              : ps.s === 3
-              ? p3Ref.current
-              : p4Ref.current;
+                : p4Ref.current;
 
-            // Don't overwrite local prediction for my own slot unless divergence is large
+            // Reconcile client's own slot
             if (ps.s === multiplayerClientRef.current?.mySlot) {
               const dx = target.position.x - ps.x;
               const dz = target.position.z - ps.z;
-              if (Math.hypot(dx, dz) > 0.45) {
+              if (Math.hypot(dx, dz) > 1.8) {
                 target.position.x = ps.x;
                 target.position.z = ps.z;
+              } else {
+                target.position.x += (ps.x - target.position.x) * 0.12;
+                target.position.z += (ps.z - target.position.z) * 0.12;
               }
             } else {
               target.position.x = ps.x;
@@ -1661,18 +1753,30 @@ export default function App() {
             target.isSwinging = true;
             target.racketSwingProgress = 0;
             target.currentShotType = input.shotType;
-            const struck = strikeBallWithRacket(
-              ballRef.current,
-              target.side,
-              input.shotType,
-              input.power,
-              { x: input.aimX, y: 0, z: input.aimZ },
-              target.position,
-              input.bias,
-              'GOOD'
-            );
-            ballRef.current = struck;
-            padelAudio.playRacketHit(input.power, input.shotType, 'GOOD', target.position);
+
+            // Lag compensation hit check
+            const timing = evaluateContactTiming(target.position, ballRef.current.position, target.side);
+            const isReachable = timing.quality !== 'OUT_OF_REACH';
+
+            if (isReachable || (performance.now() - input.timestamp < 160)) {
+              const struck = strikeBallWithRacket(
+                ballRef.current,
+                target.side,
+                input.shotType,
+                input.power,
+                { x: input.aimX, y: 0, z: input.aimZ },
+                target.position,
+                undefined,
+                isReachable ? timing.quality : 'GOOD'
+              );
+              ballRef.current = struck;
+              padelAudio.playRacketHit(input.power, input.shotType, isReachable ? timing.quality : 'GOOD', target.position);
+              multiplayerClientRef.current?.broadcastSnapshot(
+                ballRef.current,
+                [p1Ref.current, p2Ref.current, p3Ref.current, p4Ref.current],
+                scoreRef.current
+              );
+            }
           }
         },
         onPointScoredReceived: (_winner, nextScore) => {
@@ -1700,11 +1804,11 @@ export default function App() {
     return multiplayerClientRef.current;
   };
 
-  const handleCreateRoom = (customCode?: string) => {
+  const handleCreateRoom = (mode: '1v1' | '2v2' = '2v2', customCode?: string) => {
     const client = ensureMultiplayerClient();
     const code = customCode || MultiplayerClient.generateRoomCode();
     setCurrentRoomId(code);
-    client.createRoom(code, p1Custom);
+    client.createRoom(code, p1Custom, mode);
   };
 
   const handleJoinRoom = (code: string) => {
@@ -1714,8 +1818,13 @@ export default function App() {
     client.joinRoom(clean, p1Custom);
   };
 
+  const handleUpdateRoomConfig = (partial: Partial<RoomConfig>) => {
+    setRoomConfig((prev) => ({ ...prev, ...partial }));
+    multiplayerClientRef.current?.updateRoomConfig(partial);
+  };
+
   const handleQuickMatch = () => {
-    handleCreateRoom();
+    handleCreateRoom(roomConfig.mode);
   };
 
   const handleSlotChange = (slot: 1 | 2 | 3 | 4) => {
@@ -1734,8 +1843,7 @@ export default function App() {
     multiplayerClientRef.current?.fillAllEmptySlotsWithBots();
   };
 
-  const handleStartMultiplayerMatch = (mode: '1v1' | '2v2') => {
-    onlineModeRef.current = mode === '1v1' ? 'online-1v1' : 'online-2v2';
+  const handleStartMultiplayerMatch = () => {
     multiplayerClientRef.current?.startMatch();
   };
 
@@ -1980,6 +2088,18 @@ export default function App() {
           p2Name={isOnlineMode(gameMode) ? p2Custom.name : 'Alejandro'}
           pingMs={pingMs}
           connectionStatus={connectionStatus}
+          onlinePlayerLabel={
+            isOnlineMode(gameMode)
+              ? isHost || mySlot === 1
+                ? 'YOU ARE P1 - TEAM BLUE'
+                : mySlot === 2
+                ? 'YOU ARE P2 - TEAM RED'
+                : mySlot === 3
+                ? 'YOU ARE P3 - TEAM BLUE'
+                : 'YOU ARE P4 - TEAM RED'
+              : undefined
+          }
+          onToggleNetDebug={() => setShowNetDebug((prev) => !prev)}
           onTouchJoystick={(x, z) => inputManagerRef.current?.setVirtualStick(x, z)}
           onTouchHitStart={() => inputManagerRef.current?.startTouchCharge()}
           onTouchHitEnd={() => inputManagerRef.current?.releaseTouchCharge()}
@@ -2021,7 +2141,9 @@ export default function App() {
         onFillBots={handleFillBots}
         onStartMatch={handleStartMultiplayerMatch}
         onLeaveRoom={handleLeaveRoom}
+        onUpdateConfig={handleUpdateRoomConfig}
         currentRoomId={currentRoomId}
+        roomConfig={roomConfig}
         slots={lobbySlots}
         mySlot={mySlot}
         isHost={isHost}
@@ -2031,6 +2153,26 @@ export default function App() {
         pingMs={pingMs}
         simulatedLatency={simulatedLatency}
         onToggleSimulatedLatency={handleToggleSimulatedLatency}
+      />
+
+      {/* F4 Net Debug HUD Overlay */}
+      <NetDebugOverlay
+        visible={showNetDebug}
+        onToggle={() => setShowNetDebug((prev) => !prev)}
+        stats={{
+          peerId: multiplayerClientRef.current?.myPlayerId || null,
+          role: !isOnlineMode(gameMode) ? 'OFFLINE' : isHost ? 'HOST' : 'CLIENT',
+          mySlot: mySlot,
+          team: mySlot === 1 || mySlot === 3 ? 'blue' : 'red',
+          side: mySlot === 1 || mySlot === 3 ? 'south' : 'north',
+          roomCode: currentRoomId,
+          pingMs: pingMs,
+          snapshotRateHz: multiplayerClientRef.current?.getDebugStats()?.snapshotRateHz ?? (isHost ? 30 : 0),
+          packetLossPercent: multiplayerClientRef.current?.getDebugStats()?.packetLossPercent ?? 0,
+          bufferHealthMs: multiplayerClientRef.current?.getDebugStats()?.bufferHealthMs ?? 65,
+          mode: roomConfig.mode,
+          transport: multiplayerClientRef.current?.getDebugStats()?.transport ?? 'WebRTC Dual-Channel',
+        }}
       />
 
       {/* Career Profile Modal */}
