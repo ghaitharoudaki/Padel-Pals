@@ -346,9 +346,9 @@ export class MultiplayerClient {
           typeof (window as any).webkitRTCPeerConnection !== 'undefined');
 
       if (typeof PeerCtor === 'function' && hasWebRTC) {
-        const peerId = asHost
-          ? `padelpals-${roomId.toLowerCase()}`
-          : `padelpals-${roomId.toLowerCase()}-${this.myPlayerId}`;
+        // Only the host needs a stable discoverable ID. Let PeerJS assign
+        // clients a valid unique ID instead of coupling game IDs to PeerJS IDs.
+        const peerId = asHost ? `padelpals-${roomId.toLowerCase()}` : undefined;
 
         const peer = new PeerCtor(peerId, {
           debug: 0,
@@ -406,6 +406,14 @@ export class MultiplayerClient {
                 `Room "${roomId}" not found. Verify the room code.`
               );
             }
+            return;
+          }
+
+          if (err.type === 'invalid-id') {
+            this.callbacks.onConnectionStatusChanged?.(
+              'disconnected',
+              'This browser received an invalid PeerJS identity. Please reload and try joining again.'
+            );
             return;
           }
 

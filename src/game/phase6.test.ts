@@ -20,6 +20,12 @@ test('Phase 6 - Netcode: Room Code generation produces valid 5-char codes', () =
   }
 });
 
+test('Phase 6 - Netcode: Client game IDs are separate from PeerJS IDs', () => {
+  const client = new MultiplayerClient({});
+  assert.match(client.myPlayerId, /^p_[a-z0-9]+$/, 'Game player ID must remain stable and local');
+  client.disconnect();
+});
+
 test('Phase 6 - Netcode: Float quantization truncates bandwidth footprint', () => {
   assert.strictEqual(q(3.1415926, 2), 3.14);
   assert.strictEqual(q(-7.20000001, 2), -7.2);
