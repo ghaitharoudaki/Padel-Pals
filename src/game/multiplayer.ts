@@ -286,7 +286,7 @@ export class MultiplayerClient {
     this.slots = this.createInitialSlots(appearance, mode);
 
     this.callbacks.onConnectionStatusChanged?.('connecting');
-    this.initTransports(true, this.currentRoomId, appearance);
+    void this.initTransports(true, this.currentRoomId, appearance);
   }
 
   /**
@@ -318,13 +318,47 @@ export class MultiplayerClient {
       }
     }, 20000);
 
-    this.initTransports(false, this.currentRoomId, appearance);
+    void this.initTransports(false, this.currentRoomId, appearance);
   }
 
   /**
    * Initialize dual-channel WebRTC connections and BroadcastChannel
    */
-  private initTransports(asHost: boolean, roomId: string, appearance: PlayerAppearance) {
+  private async getIceServers(): Promise<RTCIceServer[]> {
+    const iceServers: RTCIceServer[] = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:stun.nextcloud.com:443' },
+      {
+        urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'],
+        username: 'peerjs',
+        credential: 'peerjsp',
+      },
+    ];
+
+    const credentialsUrl = (import.meta.env.VITE_TURN_CREDENTIALS_URL || '').trim();
+    if (!credentialsUrl || typeof fetch === 'undefined') return iceServers;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(credentialsUrl, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!response.ok) throw new Error(`TURN credentials request failed (${response.status})`);
+
+      const payload = await response.json();
+      const configured = Array.isArray(payload) ? payload : payload.iceServers;
+      if (Array.isArray(configured)) {
+        iceServers.push(...configured);
+      }
+    } catch (error) {
+      console.warn('TURN credentials unavailable; direct WebRTC will be attempted:', error);
+    }
+
+    return iceServers;
+  }
+
+  private async initTransports(asHost: boolean, roomId: string, appearance: PlayerAppearance) {
     // 1. BroadcastChannel (Instant local multi-tab sandbox connectivity)
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -353,12 +387,7 @@ export class MultiplayerClient {
         const peer = new PeerCtor(peerId, {
           debug: 0,
           config: {
-            iceServers: [
-              { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:stun1.l.google.com:19302' },
-              { urls: 'stun:stun2.l.google.com:19302' },
-              { urls: 'stun:stun3.l.google.com:19302' },
-            ],
+            iceServers: await this.getIceServers(),
           },
         });
         this.peer = peer;
@@ -419,7 +448,7 @@ export class MultiplayerClient {
 
           this.callbacks.onConnectionStatusChanged?.(
             'disconnected',
-            `Peer connection failed (${err.type || 'unknown error'}). Check the network or firewall and try again.`
+            this.getPeerErrorMessage(err)
           );
         });
 
@@ -435,6 +464,7 @@ export class MultiplayerClient {
               'The signaling connection was lost. Please rejoin the room.'
             );
           }
+
         });
       }
     } catch (e) {
@@ -446,6 +476,20 @@ export class MultiplayerClient {
     }
 
     this.startHeartbeat();
+  }
+
+  private getPeerErrorMessage(err: any): string {
+    const type = err?.type || 'unknown error';
+    if (
+      type === 'network' ||
+      type === 'webrtc' ||
+      type === 'socket-error' ||
+      type === 'socket-closed' ||
+      type === 'server-error'
+    ) {
+      return 'WebRTC could not cross this network. A TURN relay is required for one of the browsers; configure VITE_TURN_CREDENTIALS_URL in Vercel.';
+    }
+    return `Peer connection failed (${type}). Check the network or firewall and try again.`;
   }
 
   private connectToHost(peer: Peer, roomId: string, appearance: PlayerAppearance) {
@@ -525,8 +569,9 @@ export class MultiplayerClient {
         this.hasJoinedRoom = false;
         this.callbacks.onConnectionStatusChanged?.(
           'reconnecting',
-          'The host connection failed. Retrying...'
+          'Direct WebRTC path failed. Retrying with the configured ICE/TURN servers...'
         );
+        this.scheduleHostRetry(this.currentRoomId || '', appearance);
       }
     });
 
@@ -560,7 +605,11 @@ export class MultiplayerClient {
         this.hasEstablishedConnection = false;
         this.hasJoinedRoom = false;
         this.callbacks.onHostDisconnected?.();
-        this.callbacks.onConnectionStatusChanged?.('disconnected', 'Host disconnected');
+        this.callbacks.onConnectionStatusChanged?.(
+          'reconnecting',
+          'WebRTC connection closed. Retrying; a TURN relay may be required by this network.'
+        );
+        this.scheduleHostRetry(this.currentRoomId || '', appearance);
       }
     });
   }
