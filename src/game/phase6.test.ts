@@ -56,6 +56,30 @@ test('Phase 6 - Netcode: Host Room Creation initializes 4 slots and syncs appear
   client.disconnect();
 });
 
+test('Phase 6 - Netcode: Reliable connection auto-assigns a joining player', () => {
+  const host = new MultiplayerClient({});
+  host.createRoom('AUTO1', DEFAULT_APPEARANCE, '1v1');
+
+  const sent: Array<{ message: any; target?: string }> = [];
+  (host as any).sendReliableMessage = (message: any, target?: string) => {
+    sent.push({ message, target });
+  };
+
+  (host as any).handleClientJoinRequest(
+    'client-player',
+    { ...DEFAULT_APPEARANCE, name: 'Client Player' },
+    'peer-client'
+  );
+
+  assert.equal(host.slots[1].playerId, 'client-player');
+  assert.equal(host.slots[1].isBot, false);
+  assert.equal(sent[0].message.type, 'join_response');
+  assert.equal(sent[0].message.accepted, true);
+  assert.equal(sent[0].target, 'peer-client');
+
+  host.disconnect();
+});
+
 test('Phase 6 - Netcode: Compact Snapshot encodes state with minimal payload', () => {
   const host = new MultiplayerClient({});
   host.createRoom('SNAP1', DEFAULT_APPEARANCE);

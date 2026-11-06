@@ -143,8 +143,8 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
               Connecting to {currentRoomId}
             </h3>
             <p className="text-sm text-zinc-400">
-              Waiting for the host to accept this browser. Your player slot will appear when the
-              WebRTC connection is established.
+              Joining automatically. Your player slot will appear as soon as the WebRTC connection
+              is established.
             </p>
             <button
               onClick={onLeaveRoom}

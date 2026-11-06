@@ -450,7 +450,14 @@ export class MultiplayerClient {
 
   private connectToHost(peer: Peer, roomId: string, appearance: PlayerAppearance) {
     const hostPeerId = `padelpals-${roomId.toLowerCase()}`;
-    const relConn = peer.connect(hostPeerId, { reliable: true, label: 'reliable' });
+    const relConn = peer.connect(hostPeerId, {
+      reliable: true,
+      label: 'reliable',
+      metadata: {
+        playerId: this.myPlayerId,
+        appearance,
+      },
+    });
     this.hostReliableConn = relConn;
     this.setupConnection(relConn, appearance, true);
 
@@ -459,6 +466,9 @@ export class MultiplayerClient {
       const unrelConn = this.peer.connect(hostPeerId, {
         reliable: false,
         label: 'unreliable',
+        metadata: {
+          playerId: this.myPlayerId,
+        },
       });
       this.hostUnreliableConn = unrelConn;
       this.setupConnection(unrelConn, appearance, false);
@@ -490,9 +500,15 @@ export class MultiplayerClient {
       if (!this.isHost) {
         if (isReliable) this.hostReliableConn = conn;
         else this.hostUnreliableConn = conn;
-
-        if (isReliable) this.sendJoinRequest(appearance);
       } else {
+        if (isReliable && conn.metadata?.playerId) {
+          const remoteAppearance = conn.metadata.appearance as PlayerAppearance | undefined;
+          this.handleClientJoinRequest(
+            conn.metadata.playerId,
+            remoteAppearance || appearance,
+            conn.peer
+          );
+        }
         this.isConnected = true;
         this.callbacks.onConnectionStatusChanged?.('connected');
         this.broadcastLobbyState();
@@ -592,18 +608,6 @@ export class MultiplayerClient {
         this.callbacks.onConnectionStatusChanged?.('reconnecting');
       }
     }, 1000);
-  }
-
-  private sendJoinRequest(appearance: PlayerAppearance) {
-    const message = {
-      type: 'request_join',
-      playerId: this.myPlayerId,
-      appearance,
-    };
-
-    if (this.hostReliableConn?.open) {
-      this.hostReliableConn.send(message);
-    }
   }
 
   /**
@@ -892,6 +896,19 @@ export class MultiplayerClient {
       if (sourcePeer && !this.connectionPlayerIds.has(sourcePeer)) {
         this.connectionPlayerIds.set(sourcePeer, playerId);
       }
+      const existing = this.slots.find((slot) => slot.playerId === playerId);
+      if (existing && sourcePeer) {
+        this.sendReliableMessage(
+          {
+            type: 'join_response',
+            accepted: true,
+            assignedSlot: existing.slot,
+            config: this.roomConfig,
+            slots: this.slots,
+          },
+          sourcePeer
+        );
+      }
       return;
     }
     this.joinRequestIds.add(playerId);
@@ -901,7 +918,7 @@ export class MultiplayerClient {
         type: 'join_response',
         accepted: false,
         error: `Match already in progress in room ${this.currentRoomId}.`,
-      });
+      }, sourcePeer);
       return;
     }
 
@@ -917,7 +934,7 @@ export class MultiplayerClient {
           type: 'join_response',
           accepted: false,
           error: `Room ${this.currentRoomId} is full (all slots occupied).`,
-        });
+        }, sourcePeer);
         return;
       }
 
