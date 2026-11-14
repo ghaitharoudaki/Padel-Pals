@@ -55,6 +55,8 @@ export interface BallState {
   serveBoxTarget: 'left' | 'right' | null;
   lastShotType?: ShotType;
   inPlay: boolean;
+  /** True once the ball has crossed the net into the opponent's half since the last hit. */
+  crossedNet?: boolean;
   trail: Vector3D[];
 }
 
@@ -268,6 +270,7 @@ export interface ClientInputPacket {
   moveZ: number;
   isJumping: boolean;
   wantsSwing: boolean;
+  sprint?: boolean;
   shotType: ShotType;
   power: number;
   aimX: number;

@@ -58,7 +58,7 @@ test('MainMenu component uses zero-pill chunky buttons and 3 big tiles for play'
 test('GameHUD component has minimal top-center scoreboard without giant covering banners', () => {
   const hudPath = path.resolve(process.cwd(), 'src/components/GameHUD.tsx');
   const content = fs.readFileSync(hudPath, 'utf-8');
-  assert.ok(content.includes('FIRST TO 6'), 'Scoreboard must display match format');
+  assert.ok(content.includes('describeMatchFormat'), 'Scoreboard must display the match format');
   assert.ok(content.includes('score.servingSide'), 'Scoreboard must track serving side');
   assert.ok(!content.includes('NEXT SERVE IN 3s'), 'Must remove giant 3s countdown banner');
 });

@@ -23,11 +23,46 @@ export class FixedTimestepLoop {
   private frameCount = 0;
   private lastFpsUpdate = 0;
   public currentFps = 60;
+  /** When this returns true, the simulation keeps stepping while the tab is hidden (online host). */
+  public keepAliveWhenHidden: () => boolean = () => false;
+  private backgroundWorker: Worker | null = null;
+  private lastFrameAt = 0;
 
   constructor(callbacks: LoopCallbacks, isSoftwareGl = false, renderer?: THREE.WebGLRenderer) {
     this.callbacks = callbacks;
     this.isSoftwareGl = isSoftwareGl;
     this.renderer = renderer;
+  }
+
+  /**
+   * Browsers pause requestAnimationFrame in hidden tabs. A tiny worker timer (not throttled like
+   * page timers) keeps fixed updates running so an online host doesn't freeze every client.
+   */
+  private startBackgroundTicker() {
+    if (this.backgroundWorker || typeof Worker === 'undefined' || typeof Blob === 'undefined') return;
+    try {
+      const source = 'setInterval(function(){postMessage(0)},16);';
+      const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+      this.backgroundWorker = new Worker(url);
+      URL.revokeObjectURL(url);
+      this.backgroundWorker.onmessage = () => this.backgroundTick();
+    } catch {
+      this.backgroundWorker = null;
+    }
+  }
+
+  private backgroundTick() {
+    if (!this.running) return;
+    const now = performance.now();
+    // Only step when rAF has stalled (hidden tab) and the owner wants it.
+    if (now - this.lastFrameAt < 250 || !this.keepAliveWhenHidden()) return;
+    const frameTime = Math.min((now - this.lastTime) / 1000, MAX_ACCUMULATOR);
+    this.lastTime = now;
+    this.accumulator += frameTime;
+    while (this.accumulator >= FIXED_TIMESTEP) {
+      this.callbacks.fixedUpdate(FIXED_TIMESTEP);
+      this.accumulator -= FIXED_TIMESTEP;
+    }
   }
 
   public start() {
@@ -36,11 +71,15 @@ export class FixedTimestepLoop {
     this.lastTime = performance.now();
     this.lastFpsUpdate = this.lastTime;
     this.accumulator = 0;
+    this.lastFrameAt = this.lastTime;
+    this.startBackgroundTicker();
     this.tick();
   }
 
   public stop() {
     this.running = false;
+    this.backgroundWorker?.terminate();
+    this.backgroundWorker = null;
     if (this.frameId) {
       if (this.isSoftwareGl) {
         clearTimeout(this.frameId);
@@ -57,6 +96,7 @@ export class FixedTimestepLoop {
     const now = performance.now();
     const frameTime = Math.min((now - this.lastTime) / 1000, MAX_ACCUMULATOR);
     this.lastTime = now;
+    this.lastFrameAt = now;
 
     // Track FPS
     this.frameCount++;

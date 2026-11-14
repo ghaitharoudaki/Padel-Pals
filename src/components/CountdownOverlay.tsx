@@ -6,6 +6,7 @@ interface CountdownOverlayProps {
   p1Name?: string;
   p2Name?: string;
   gameMode?: string;
+  localTeam?: 'south' | 'north';
 }
 
 export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
@@ -13,6 +14,7 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
   p1Name = 'Player 1',
   p2Name = 'Opponent',
   gameMode = '2v2',
+  localTeam = 'south',
 }) => {
   const [count, setCount] = useState<number>(3);
   const [text, setText] = useState<string>('3');
@@ -61,12 +63,13 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
   return (
     <div className="absolute inset-0 z-50 pointer-events-none flex flex-col items-center justify-center select-none font-sans bg-slate-950/20">
       {/* Versus Banner Header */}
-      <div className="mb-6 flex items-center gap-4 animate-in fade-in zoom-in-95 duration-200">
+      <div className="mb-6 px-4 flex flex-col sm:flex-row items-center gap-3 sm:gap-4 animate-in zoom-in-95 text-center">
         <span
           className="bg-blue-600 text-white font-brand text-2xl sm:text-3xl px-5 py-2 rounded-2xl border-4 border-slate-900 -rotate-2"
           style={{ boxShadow: '4px 4px 0px #0f172a' }}
         >
           {p1Name.toUpperCase()}
+          {localTeam === 'south' && <span className="ml-2 align-middle text-xs bg-white text-slate-950 px-1.5 py-0.5 rounded">YOU</span>}
         </span>
         <span
           className="bg-amber-400 text-slate-950 font-black text-xl px-3 py-1 rounded-xl border-3 border-slate-900 rotate-2"
@@ -79,6 +82,7 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
           style={{ boxShadow: '4px 4px 0px #0f172a' }}
         >
           {p2Name.toUpperCase()}
+          {localTeam === 'north' && <span className="ml-2 align-middle text-xs bg-white text-slate-950 px-1.5 py-0.5 rounded">YOU</span>}
         </span>
       </div>
 
@@ -99,7 +103,7 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
           className="inline-block bg-slate-900 text-cyan-300 font-black text-sm uppercase px-4 py-1.5 rounded-xl border-2 border-slate-700 tracking-widest"
           style={{ boxShadow: '3px 3px 0px rgba(0,0,0,0.5)' }}
         >
-          {count > 0 ? `${gameMode.toUpperCase()} MATCH STARTING` : 'GET READY TO SERVE!'}
+          {count > 0 ? `${gameMode.toUpperCase()} MATCH STARTING` : 'PLAY!'}
         </span>
       </div>
     </div>

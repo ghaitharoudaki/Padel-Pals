@@ -1,1 +1,115 @@
 @import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #09090b;
+  overscroll-behavior: none;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Lightweight replacements for the tailwindcss-animate utilities used across the UI. */
+@keyframes pp-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pp-zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pp-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(2rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pp-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes countdown-pop {
+  0% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(0.9);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes pp-serve-pulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.03);
+  }
+}
+
+.animate-in {
+  animation: pp-fade-in 0.2s ease-out both;
+}
+.animate-in.zoom-in-95 {
+  animation-name: pp-zoom-in;
+}
+.animate-in.slide-in-from-right-8 {
+  animation-name: pp-slide-in-right;
+}
+.animate-slide-up {
+  animation: pp-slide-up 0.22s ease-out both;
+}
+.animate-countdown-pop {
+  animation: countdown-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.animate-serve-pulse {
+  animation: pp-serve-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-slide-up,
+  .animate-countdown-pop,
+  .animate-serve-pulse,
+  .animate-logo-bounce,
+  .animate-pulse {
+    animation: none !important;
+  }
+}

@@ -1,5 +1,5 @@
 import { BallState, Difficulty, HitQuality, PlayerState, ShotType, SwingSide, Vector3D } from './types';
-import { evaluateContactTiming, predictBallLanding } from './physics';
+import { canPlayerStrikeBall, evaluateContactTiming, predictBallLanding } from './physics';
 import { isBajadaWindow } from './ball';
 
 export interface BotDecision {
@@ -106,7 +106,7 @@ export function updateBotAI(
   let homeX = 0;
 
   if (isDoubles) {
-    const isBotRight = bot.zone === 'right' || bot.slot === 3 || bot.slot === 4;
+    const isBotRight = bot.zone === 'right';
     homeX = isBotRight ? 2.2 : -2.2;
     // Strict lane limit: A doubles bot MUST NOT cross over into partner's side!
     if (isBotRight) {
@@ -254,12 +254,14 @@ export function updateBotAI(
 
       const onBotSide = isSouth ? ball.position.z > 0.2 : ball.position.z < -0.2;
       const validGroundstroke = ball.bounceCount >= 1;
-      const validVolley = ball.bounceCount === 0 && onBotSide && ball.position.y > 0.85 && Math.abs(ball.position.z) < 6.5;
+      const validVolley =
+        ball.bounceCount === 0 && !ball.isServe && onBotSide && ball.position.y > 0.85 && Math.abs(ball.position.z) < 6.5;
 
       // Check for Bajada (aggressive downward wall rebound drive)
       const canBajada = isBajadaWindow(ball, bot.position, bot.side);
 
-      if (timing.quality !== 'OUT_OF_REACH' && (validGroundstroke || validVolley || canBajada) && ball.position.y <= 2.9) {
+      const legal = canPlayerStrikeBall(ball, bot.side);
+      if (legal && timing.quality !== 'OUT_OF_REACH' && (validGroundstroke || validVolley || canBajada) && ball.position.y <= 2.9) {
         wantsToSwing = true;
         stateDesc = 'Swinging';
 

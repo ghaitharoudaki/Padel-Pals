@@ -1,186 +1,281 @@
 import express from 'express';
 import http from 'http';
-import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { WebSocketServer, WebSocket, RawData } from 'ws';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/**
+ * Padel Pals game server.
+ *
+ * - Serves the built client (production) or the Vite dev middleware (development).
+ * - Hosts a lightweight WebSocket room relay at /ws. The match host's browser stays
+ *   authoritative; the server only forwards packets between the host and its clients.
+ *   This works across any network (no NAT traversal / TURN needed), which makes online
+ *   play far more reliable than peer-to-peer WebRTC.
+ *
+ * Relay protocol (JSON text frames):
+ *   client -> server  { op: 'host', room, mode, isPublic }
+ *   client -> server  { op: 'join', room, meta }
+ *   client -> server  { op: 'msg', to?, data }        host: to a peer (or all); client: to host
+ *   client -> server  { op: 'status', open }           host advertises whether quick match may join
+ *   server -> client  { op: 'hosted', peer, room }
+ *   server -> client  { op: 'joined', peer, room }
+ *   server -> client  { op: 'peer_join', peer, meta }  (to host)
+ *   server -> client  { op: 'peer_leave', peer }        (to host)
+ *   server -> client  { op: 'host_left' }               (to clients)
+ *   server -> client  { op: 'msg', from, data }
+ *   server -> client  { op: 'error', code, message }
+ * Binary frames: host -> every client untouched; client -> host prefixed with
+ *   [0xFF, idLength, ...senderPeerId] so the host knows who sent it.
+ */
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
 
-const PORT = process.env.PORT || 3000;
+// Route only /ws upgrades to the relay so other upgrade handlers (e.g. Vite HMR) keep working.
+server.on('upgrade', (req, socket, head) => {
+  const pathname = (req.url || '').split('?')[0];
+  if (pathname !== '/ws') return;
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+});
+
+const PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
+const ROOM_CODE_RE = /^[A-Z0-9]{4,8}$/;
+const MAX_CLIENTS_PER_ROOM = 3;
 
-interface PlayerConnection {
-  ws: WebSocket;
-  id: string;
-  roomId: string;
-  side: 'south' | 'north';
-  name: string;
-  customization?: Record<string, unknown>;
+interface RelaySocket extends WebSocket {
+  peerId: string;
+  roomId: string | null;
+  role: 'host' | 'client' | null;
+  isAlive: boolean;
 }
 
-interface GameRoom {
+interface Room {
   id: string;
-  players: PlayerConnection[];
-  matchMode: '1v1' | '2v2';
-  ballState?: unknown;
-  scoreState?: unknown;
-  lastActive: number;
+  host: RelaySocket;
+  clients: Map<string, RelaySocket>;
+  mode: '1v1' | '2v2';
+  isPublic: boolean;
+  open: boolean;
+  createdAt: number;
 }
 
-const rooms = new Map<string, GameRoom>();
+const rooms = new Map<string, Room>();
+let peerCounter = 0;
 
-// Clean up idle rooms every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [roomId, room] of rooms.entries()) {
-    if (room.players.length === 0 && now - room.lastActive > 10 * 60 * 1000) {
-      rooms.delete(roomId);
-    }
+function send(ws: WebSocket, payload: unknown) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
   }
-}, 60 * 1000);
+}
 
-wss.on('connection', (ws) => {
-  let currentPlayer: PlayerConnection | null = null;
+function sendError(ws: WebSocket, code: string, message: string) {
+  send(ws, { op: 'error', code, message });
+}
 
-  ws.on('message', (data) => {
-    try {
-      const msg = JSON.parse(data.toString());
+function newPeerId() {
+  peerCounter = (peerCounter + 1) % 1_000_000;
+  return `r${Date.now().toString(36)}${peerCounter.toString(36)}`;
+}
 
-      if (msg.type === 'join') {
-        const roomId = (msg.roomId || 'court-1').toUpperCase().trim();
-        let room = rooms.get(roomId);
+function capacityFor(mode: '1v1' | '2v2') {
+  return mode === '1v1' ? 1 : MAX_CLIENTS_PER_ROOM;
+}
 
-        if (!room) {
-          room = {
-            id: roomId,
-            players: [],
-            matchMode: msg.matchMode === '1v1' ? '1v1' : '2v2',
-            lastActive: Date.now(),
-          };
-          rooms.set(roomId, room);
-        }
+function leaveRoom(ws: RelaySocket) {
+  const roomId = ws.roomId;
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  ws.roomId = null;
+  const role = ws.role;
+  ws.role = null;
+  if (!room) return;
 
-        if (room.players.length > 0 && room.matchMode !== (msg.matchMode === '1v1' ? '1v1' : '2v2')) {
-          ws.send(JSON.stringify({ type: 'room_mode_mismatch', roomId, matchMode: room.matchMode }));
-          return;
-        }
+  if (role === 'host' && room.host === ws) {
+    rooms.delete(roomId);
+    room.clients.forEach((client) => {
+      send(client, { op: 'host_left' });
+      client.roomId = null;
+      client.role = null;
+    });
+    room.clients.clear();
+  } else if (role === 'client') {
+    room.clients.delete(ws.peerId);
+    send(room.host, { op: 'peer_leave', peer: ws.peerId });
+  }
+}
 
-        if (room.players.length >= (room.matchMode === '1v1' ? 2 : 2)) {
-          ws.send(JSON.stringify({ type: 'room_full', roomId }));
-          return;
-        }
+wss.on('connection', (rawWs) => {
+  const ws = rawWs as RelaySocket;
+  ws.peerId = newPeerId();
+  ws.roomId = null;
+  ws.role = null;
+  ws.isAlive = true;
 
-        // Determine side: first player is South (near), second is North (far)
-        let side: 'south' | 'north' = 'south';
-        if (room.players.length === 1) {
-          side = room.players[0].side === 'south' ? 'north' : 'south';
-        }
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
 
-        currentPlayer = {
-          ws,
-          id: msg.playerId || Math.random().toString(36).substring(2, 9),
-          roomId,
-          side,
-          name: msg.name || (side === 'south' ? 'Player 1' : 'Player 2'),
-          customization: msg.customization,
-        };
+  ws.on('message', (data: RawData, isBinary: boolean) => {
+    ws.isAlive = true;
 
-        room.players.push(currentPlayer);
-        room.lastActive = Date.now();
-
-        // Send confirmation to joining player
-        ws.send(JSON.stringify({
-          type: 'joined',
-          roomId,
-          playerId: currentPlayer.id,
-          side,
-          playerCount: room.players.length,
-          players: room.players.map(p => ({ id: p.id, side: p.side, name: p.name, customization: p.customization })),
-        }));
-
-        // Notify other player in room
-        const otherPlayers = room.players.filter(p => p.ws !== ws);
-        otherPlayers.forEach(p => {
-          if (p.ws.readyState === WebSocket.OPEN) {
-            p.ws.send(JSON.stringify({
-              type: 'player_joined',
-              player: {
-                id: currentPlayer!.id,
-                side: currentPlayer!.side,
-                name: currentPlayer!.name,
-                customization: currentPlayer!.customization,
-              },
-              playerCount: room!.players.length,
-            }));
-          }
+    if (isBinary) {
+      const room = ws.roomId ? rooms.get(ws.roomId) : undefined;
+      if (!room) return;
+      if (ws.role === 'host') {
+        room.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) client.send(data, { binary: true });
         });
+      } else if (ws.role === 'client' && room.host.readyState === WebSocket.OPEN) {
+        // Tag client frames with the sender id: [0xFF, idLength, ...id, ...payload]
+        const id = Buffer.from(ws.peerId, 'utf8');
+        const payload = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer);
+        room.host.send(Buffer.concat([Buffer.from([0xff, id.length]), id, payload]), { binary: true });
+      }
+      return;
+    }
 
-        // If 2 players, notify room ready!
-        if (room.players.length >= 2) {
-          room.players.forEach(p => {
-            if (p.ws.readyState === WebSocket.OPEN) {
-              p.ws.send(JSON.stringify({
-                type: 'room_ready',
-                roomId,
-                servingSide: 'south',
-                matchMode: room.matchMode,
-              }));
-            }
-          });
+    let msg: any;
+    try {
+      msg = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
+    if (!msg || typeof msg.op !== 'string') return;
+
+    switch (msg.op) {
+      case 'host': {
+        const roomId = String(msg.room || '').toUpperCase().trim();
+        if (!ROOM_CODE_RE.test(roomId)) {
+          sendError(ws, 'invalid_room', 'Room codes must be 4-8 letters or numbers.');
+          return;
+        }
+        leaveRoom(ws);
+        const existing = rooms.get(roomId);
+        if (existing && existing.host.readyState === WebSocket.OPEN) {
+          sendError(ws, 'room_taken', `Room code "${roomId}" is already in use.`);
+          return;
+        }
+        const room: Room = {
+          id: roomId,
+          host: ws,
+          clients: new Map(),
+          mode: msg.mode === '1v1' ? '1v1' : '2v2',
+          isPublic: !!msg.isPublic,
+          open: true,
+          createdAt: Date.now(),
+        };
+        rooms.set(roomId, room);
+        ws.roomId = roomId;
+        ws.role = 'host';
+        send(ws, { op: 'hosted', peer: ws.peerId, room: roomId });
+        return;
+      }
+
+      case 'join': {
+        const roomId = String(msg.room || '').toUpperCase().trim();
+        const room = rooms.get(roomId);
+        if (!room || room.host.readyState !== WebSocket.OPEN) {
+          sendError(ws, 'room_not_found', `Room "${roomId}" was not found. Check the code with the host.`);
+          return;
+        }
+        if (room.host === ws) {
+          sendError(ws, 'invalid_room', 'You are already hosting this room.');
+          return;
+        }
+        if (room.clients.size >= capacityFor(room.mode)) {
+          sendError(ws, 'room_full', `Room "${roomId}" is full.`);
+          return;
+        }
+        leaveRoom(ws);
+        room.clients.set(ws.peerId, ws);
+        ws.roomId = roomId;
+        ws.role = 'client';
+        send(ws, { op: 'joined', peer: ws.peerId, room: roomId });
+        send(room.host, { op: 'peer_join', peer: ws.peerId, meta: msg.meta ?? null });
+        return;
+      }
+
+      case 'status': {
+        const room = ws.roomId ? rooms.get(ws.roomId) : undefined;
+        if (room && room.host === ws) {
+          room.open = !!msg.open;
+          if (msg.mode === '1v1' || msg.mode === '2v2') room.mode = msg.mode;
         }
         return;
       }
 
-      if (!currentPlayer) return;
-      const room = rooms.get(currentPlayer.roomId);
-      if (!room) return;
-      room.lastActive = Date.now();
-
-      // Relay gameplay messages to other players in the room
-      if (['player_state', 'ball_state', 'serve_trigger', 'point_scored'].includes(msg.type)) {
-        room.players.forEach(p => {
-          if (p.ws !== ws && p.ws.readyState === WebSocket.OPEN) {
-            p.ws.send(JSON.stringify(msg));
+      case 'msg': {
+        const room = ws.roomId ? rooms.get(ws.roomId) : undefined;
+        if (!room) return;
+        const envelope = JSON.stringify({ op: 'msg', from: ws.peerId, data: msg.data });
+        if (ws.role === 'host') {
+          if (typeof msg.to === 'string') {
+            const target = room.clients.get(msg.to);
+            if (target?.readyState === WebSocket.OPEN) target.send(envelope);
+          } else {
+            room.clients.forEach((client) => {
+              if (client.readyState === WebSocket.OPEN) client.send(envelope);
+            });
           }
-        });
+        } else if (ws.role === 'client' && room.host.readyState === WebSocket.OPEN) {
+          room.host.send(envelope);
+        }
+        return;
       }
-    } catch (e) {
-      console.error('WebSocket parse error:', e);
-    }
-  });
 
-  ws.on('close', () => {
-    if (currentPlayer) {
-      const room = rooms.get(currentPlayer.roomId);
-      if (room) {
-        room.players = room.players.filter(p => p !== currentPlayer);
-        // Inform remaining player
-        room.players.forEach(p => {
-          if (p.ws.readyState === WebSocket.OPEN) {
-            p.ws.send(JSON.stringify({
-              type: 'player_left',
-              playerId: currentPlayer!.id,
-              side: currentPlayer!.side,
-            }));
-          }
-        });
+      case 'leave': {
+        leaveRoom(ws);
+        return;
+      }
+
+      case 'ping': {
+        send(ws, { op: 'pong', t: msg.t });
+        return;
       }
     }
   });
+
+  ws.on('close', () => leaveRoom(ws));
+  ws.on('error', () => leaveRoom(ws));
 });
 
-// REST API endpoint to check room status or server health
-app.get('/api/health', (req, res) => {
+// Drop dead sockets (and keep proxies such as Render's from idling the connection out).
+const heartbeat = setInterval(() => {
+  wss.clients.forEach((rawWs) => {
+    const ws = rawWs as RelaySocket;
+    if (!ws.isAlive) {
+      ws.terminate();
+      return;
+    }
+    ws.isAlive = false;
+    try {
+      ws.ping();
+    } catch {}
+  });
+}, 20000);
+wss.on('close', () => clearInterval(heartbeat));
+
+app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
     activeRooms: rooms.size,
     totalConnections: wss.clients.size,
   });
+});
+
+// Quick match: find a public room that is still accepting players for this mode.
+app.get('/api/quickmatch', (req, res) => {
+  const mode = req.query.mode === '1v1' ? '1v1' : '2v2';
+  let best: Room | null = null;
+  for (const room of rooms.values()) {
+    if (!room.isPublic || !room.open || room.mode !== mode) continue;
+    if (room.host.readyState !== WebSocket.OPEN) continue;
+    if (room.clients.size >= capacityFor(room.mode)) continue;
+    if (!best || room.clients.size > best.clients.size) best = room;
+  }
+  res.json({ roomId: best ? best.id : null });
 });
 
 async function startServer() {
@@ -192,17 +287,29 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    const distDir = path.resolve(process.cwd(), 'dist');
+    app.use(
+      express.static(distDir, {
+        index: false,
+        setHeaders: (res, filePath) => {
+          if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+        },
+      })
+    );
+    app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.sendFile(path.join(distDir, 'index.html'));
     });
   }
 
   server.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT} (isProduction: ${isProduction})`);
+    console.log(`Padel Pals server listening on port ${PORT} (production: ${isProduction})`);
   });
 }
 
-startServer().catch(err => {
+startServer().catch((err) => {
   console.error('Failed to start server:', err);
+  process.exit(1);
 });
