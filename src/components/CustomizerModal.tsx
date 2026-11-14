@@ -4,6 +4,8 @@ import {
   DEFAULT_APPEARANCE,
   EyeType,
   EyebrowType,
+  Eyewear,
+  FacialHair,
   HairStyle,
   HeadwearType,
   JerseyStyle,
@@ -25,6 +27,7 @@ import {
   Smile,
   CircleDot,
   Crown,
+  Plus,
 } from 'lucide-react';
 
 interface Props {
@@ -44,6 +47,18 @@ const HAIR_STYLES: { id: HairStyle; label: string }[] = [
   { id: 'bun', label: 'Top Knot Bun' },
   { id: 'mohawk', label: 'Punk Mohawk' },
   { id: 'curly', label: 'Curly Puffs' },
+  { id: 'afro', label: 'Big Afro' },
+  { id: 'buzz', label: 'Buzz Cut' },
+  { id: 'undercut', label: 'Two-Tone Undercut' },
+  { id: 'slickback', label: 'Slicked Back' },
+  { id: 'side_part', label: 'Side Part' },
+  { id: 'wavy', label: 'Wavy Flow' },
+  { id: 'braids', label: 'Cornrow Braids' },
+  { id: 'pigtails', label: 'Pigtails' },
+  { id: 'twin_buns', label: 'Twin Buns' },
+  { id: 'dreads', label: 'Dreadlocks' },
+  { id: 'bob', label: 'Bob Cut' },
+  { id: 'faux_hawk', label: 'Faux Hawk' },
   { id: 'bald', label: 'Clean Shaved' },
 ];
 
@@ -74,6 +89,26 @@ const HEADWEAR_TYPES: { id: HeadwearType; label: string }[] = [
   { id: 'headband', label: 'Pro Headband' },
   { id: 'cap', label: 'Tournament Cap' },
   { id: 'sweatband', label: 'Plush Sweatband' },
+  { id: 'backwards_cap', label: 'Backwards Cap' },
+  { id: 'visor', label: 'Sun Visor' },
+  { id: 'bandana', label: 'Bandana' },
+  { id: 'beanie', label: 'Pom Beanie' },
+];
+
+const FACIAL_HAIR_TYPES: { id: FacialHair; label: string }[] = [
+  { id: 'none', label: 'Clean' },
+  { id: 'stubble', label: 'Stubble' },
+  { id: 'mustache', label: 'Mustache' },
+  { id: 'goatee', label: 'Goatee' },
+  { id: 'beard', label: 'Full Beard' },
+];
+
+const EYEWEAR_TYPES: { id: Eyewear; label: string }[] = [
+  { id: 'none', label: 'None' },
+  { id: 'sport_shades', label: 'Sport Shades' },
+  { id: 'round_glasses', label: 'Round Glasses' },
+  { id: 'square_glasses', label: 'Square Frames' },
+  { id: 'goggles', label: 'Pro Goggles' },
 ];
 
 const JERSEY_STYLES: { id: JerseyStyle; label: string }[] = [
@@ -112,6 +147,113 @@ const SKIN_TONES = [
   { name: 'Caramel', hex: '#d97706' },
   { name: 'Deep Bronze', hex: '#78350f' },
 ];
+
+type Swatch = { name: string; hex: string };
+
+/** Preset swatches plus a free colour picker for any custom shade. */
+const ColorRow: React.FC<{
+  label: string;
+  value: string | undefined;
+  onPick: (hex: string) => void;
+  palette?: Swatch[];
+}> = ({ label, value, onPick, palette = COLOR_PALETTE }) => {
+  const current = (value || '#000000').toLowerCase();
+  const isCustom = !palette.some((c) => c.hex.toLowerCase() === current);
+  return (
+    <div>
+      <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">{label}</label>
+      <div className="flex flex-wrap gap-2 items-center">
+        {palette.map((c) => {
+          const selected = c.hex.toLowerCase() === current;
+          return (
+            <button
+              key={c.hex}
+              onClick={() => onPick(c.hex)}
+              className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition ${
+                selected ? 'border-blue-600 scale-110 shadow-md' : 'border-black/15'
+              }`}
+              style={{ backgroundColor: c.hex }}
+              title={c.name}
+              aria-label={`${label}: ${c.name}`}
+            >
+              {selected && <Check className={`w-3.5 h-3.5 ${isLight(c.hex) ? 'text-black' : 'text-white'}`} />}
+            </button>
+          );
+        })}
+        <label
+          className={`relative w-7 h-7 rounded-full border-2 cursor-pointer overflow-hidden flex items-center justify-center transition ${
+            isCustom ? 'border-blue-600 scale-110 shadow-md' : 'border-black/15'
+          }`}
+          style={{
+            background: isCustom
+              ? current
+              : 'conic-gradient(#ef4444, #f59e0b, #84cc16, #06b6d4, #6366f1, #d946ef, #ef4444)',
+          }}
+          title="Custom colour"
+        >
+          {isCustom ? (
+            <Check className={`w-3.5 h-3.5 ${isLight(current) ? 'text-black' : 'text-white'}`} />
+          ) : (
+            <Plus className="w-3.5 h-3.5 text-white drop-shadow" />
+          )}
+          <input
+            type="color"
+            value={/^#[0-9a-f]{6}$/i.test(current) ? current : '#000000'}
+            onChange={(e) => onPick(e.target.value)}
+            className="absolute inset-0 opacity-0 cursor-pointer"
+            aria-label={`${label}: custom colour`}
+          />
+        </label>
+      </div>
+    </div>
+  );
+};
+
+function isLight(hex: string): boolean {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return false;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return r * 0.299 + g * 0.587 + b * 0.114 > 170;
+}
+
+function OptionGrid<T extends string>({
+  label,
+  options,
+  value,
+  onPick,
+  cols = 2,
+}: {
+  label: string;
+  options: { id: T; label: string }[];
+  value: T | undefined;
+  onPick: (id: T) => void;
+  cols?: number;
+}) {
+  return (
+    <div>
+      <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">{label}</label>
+      <div className={`grid gap-2 ${cols === 1 ? 'grid-cols-1' : cols === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        {options.map((o) => (
+          <button
+            key={o.id}
+            onClick={() => onPick(o.id)}
+            className={`p-2.5 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between ${
+              value === o.id
+                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
+            }`}
+          >
+            <span>{o.label}</span>
+            {value === o.id && <Check className="w-3.5 h-3.5 text-blue-600" />}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export const CustomizerModal: React.FC<Props> = ({
   isOpen,
@@ -202,6 +344,11 @@ export const CustomizerModal: React.FC<Props> = ({
     applyChange({
       hairStyle: randomHair,
       hairColor: randomHairColor,
+      hairSecondaryColor: randomItem(['#451a03', '#18181b', '#dc2626', '#0284c7', '#db2777', '#ffffff']),
+      headwear: Math.random() < 0.5 ? 'none' : randomItem(HEADWEAR_TYPES).id,
+      headwearColor: randomItem(['#dc2626', '#2563eb', '#18181b', '#ffffff', '#059669']),
+      facialHair: Math.random() < 0.6 ? 'none' : randomItem(FACIAL_HAIR_TYPES).id,
+      eyewear: Math.random() < 0.6 ? 'none' : randomItem(EYEWEAR_TYPES).id,
       skinTone: randomSkin,
       eyeType: randomEyes,
       eyebrowType: randomEyebrow,
@@ -463,27 +610,7 @@ export const CustomizerModal: React.FC<Props> = ({
               {activeTab === 'jersey' && (
                 <div className="space-y-4">
                   {/* Jersey Style */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Uniform Cut & Style
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {JERSEY_STYLES.map((j) => (
-                        <button
-                          key={j.id}
-                          onClick={() => applyChange({ jerseyStyle: j.id })}
-                          className={`p-2.5 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between ${
-                            appearance.jerseyStyle === j.id
-                              ? 'border-blue-600 bg-blue-50 text-blue-700'
-                              : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
-                          }`}
-                        >
-                          <span>{j.label}</span>
-                          {appearance.jerseyStyle === j.id && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <OptionGrid label="Uniform Cut & Style" options={JERSEY_STYLES} value={appearance.jerseyStyle} cols={2} onPick={(id) => applyChange({ jerseyStyle: id })} />
 
                   {/* Jersey Number */}
                   <div>
@@ -504,76 +631,17 @@ export const CustomizerModal: React.FC<Props> = ({
                   </div>
 
                   {/* Primary Color */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Primary Uniform Color
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {COLOR_PALETTE.map((c) => (
-                        <button
-                          key={c.hex}
-                          onClick={() => applyChange({ jerseyPrimary: c.hex, shortsColor: c.hex })}
-                          className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition ${
-                            appearance.jerseyPrimary === c.hex ? 'border-blue-600 scale-110 shadow-md' : 'border-black/15'
-                          }`}
-                          style={{ backgroundColor: c.hex }}
-                          title={c.name}
-                        >
-                          {appearance.jerseyPrimary === c.hex && (
-                            <Check className={`w-3.5 h-3.5 ${c.hex === '#ffffff' ? 'text-black' : 'text-white'}`} />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <ColorRow label="Primary Uniform Color" value={appearance.jerseyPrimary} onPick={(hex) => applyChange({ jerseyPrimary: hex, shortsColor: hex })} />
 
                   {/* Secondary Color (Stripes & Collar) */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Secondary Accent Color
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {COLOR_PALETTE.map((c) => (
-                        <button
-                          key={c.hex}
-                          onClick={() => applyChange({ jerseySecondary: c.hex, wristbandColor: c.hex })}
-                          className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition ${
-                            appearance.jerseySecondary === c.hex ? 'border-blue-600 scale-110 shadow-md' : 'border-black/15'
-                          }`}
-                          style={{ backgroundColor: c.hex }}
-                          title={c.name}
-                        >
-                          {appearance.jerseySecondary === c.hex && (
-                            <Check className={`w-3.5 h-3.5 ${c.hex === '#ffffff' ? 'text-black' : 'text-white'}`} />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <ColorRow label="Secondary Accent Color" value={appearance.jerseySecondary} onPick={(hex) => applyChange({ jerseySecondary: hex, wristbandColor: hex })} />
 
                   {/* Shorts Color */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Shorts Color
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {COLOR_PALETTE.map((c) => (
-                        <button
-                          key={c.hex}
-                          onClick={() => applyChange({ shortsColor: c.hex })}
-                          className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition ${
-                            appearance.shortsColor === c.hex ? 'border-blue-600 scale-110 shadow-md' : 'border-black/15'
-                          }`}
-                          style={{ backgroundColor: c.hex }}
-                          title={c.name}
-                        >
-                          {appearance.shortsColor === c.hex && (
-                            <Check className={`w-3.5 h-3.5 ${c.hex === '#ffffff' ? 'text-black' : 'text-white'}`} />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <ColorRow label="Shorts Color" value={appearance.shortsColor} onPick={(hex) => applyChange({ shortsColor: hex })} />
+                  <ColorRow label="Socks Color" value={appearance.socksColor} onPick={(hex) => applyChange({ socksColor: hex })} />
+                  <ColorRow label="Shoes Color" value={appearance.shoesColor} onPick={(hex) => applyChange({ shoesColor: hex })} />
+                  <ColorRow label="Shoe Sole Color" value={appearance.shoesSoleColor} onPick={(hex) => applyChange({ shoesSoleColor: hex })} />
+                  <ColorRow label="Wristband Color" value={appearance.wristbandColor} onPick={(hex) => applyChange({ wristbandColor: hex })} />
                 </div>
               )}
 
@@ -581,74 +649,17 @@ export const CustomizerModal: React.FC<Props> = ({
               {activeTab === 'hair' && (
                 <div className="space-y-4">
                   {/* Hair Style (8+ options) */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Hair Style (3D Meshes)
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {HAIR_STYLES.map((h) => (
-                        <button
-                          key={h.id}
-                          onClick={() => applyChange({ hairStyle: h.id })}
-                          className={`p-2.5 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between ${
-                            appearance.hairStyle === h.id
-                              ? 'border-blue-600 bg-blue-50 text-blue-700'
-                              : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
-                          }`}
-                        >
-                          <span>{h.label}</span>
-                          {appearance.hairStyle === h.id && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <OptionGrid label="Hair Style (3D Meshes)" options={HAIR_STYLES} value={appearance.hairStyle} cols={2} onPick={(id) => applyChange({ hairStyle: id })} />
 
                   {/* Hair Color */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Hair Color
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {COLOR_PALETTE.map((c) => (
-                        <button
-                          key={c.hex}
-                          onClick={() => applyChange({ hairColor: c.hex })}
-                          className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition ${
-                            appearance.hairColor === c.hex ? 'border-blue-600 scale-110 shadow-md' : 'border-black/15'
-                          }`}
-                          style={{ backgroundColor: c.hex }}
-                          title={c.name}
-                        >
-                          {appearance.hairColor === c.hex && (
-                            <Check className={`w-3.5 h-3.5 ${c.hex === '#ffffff' ? 'text-black' : 'text-white'}`} />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <ColorRow label="Hair Color" value={appearance.hairColor} onPick={(hex) => applyChange({ hairColor: hex })} />
+                  <ColorRow label="Highlight / Two-Tone Color" value={appearance.hairSecondaryColor} onPick={(hex) => applyChange({ hairSecondaryColor: hex })} />
 
                   {/* Headwear Accessories */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Headwear & Accessories
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {HEADWEAR_TYPES.map((hw) => (
-                        <button
-                          key={hw.id}
-                          onClick={() => applyChange({ headwear: hw.id })}
-                          className={`p-2.5 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between ${
-                            appearance.headwear === hw.id
-                              ? 'border-blue-600 bg-blue-50 text-blue-700'
-                              : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
-                          }`}
-                        >
-                          <span>{hw.label}</span>
-                          {appearance.headwear === hw.id && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <OptionGrid label="Headwear" options={HEADWEAR_TYPES} value={appearance.headwear} cols={2} onPick={(id) => applyChange({ headwear: id })} />
+                  {appearance.headwear !== 'none' && (
+                    <ColorRow label="Headwear Color" value={appearance.headwearColor} onPick={(hex) => applyChange({ headwearColor: hex })} />
+                  )}
                 </div>
               )}
 
@@ -656,95 +667,21 @@ export const CustomizerModal: React.FC<Props> = ({
               {activeTab === 'face' && (
                 <div className="space-y-4">
                   {/* Skin Tone */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Skin Tone
-                    </label>
-                    <div className="flex gap-2.5">
-                      {SKIN_TONES.map((s) => (
-                        <button
-                          key={s.hex}
-                          onClick={() => applyChange({ skinTone: s.hex })}
-                          className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition ${
-                            appearance.skinTone === s.hex ? 'border-blue-600 scale-110 shadow-md' : 'border-black/15'
-                          }`}
-                          style={{ backgroundColor: s.hex }}
-                          title={s.name}
-                        >
-                          {appearance.skinTone === s.hex && <Check className="w-4 h-4 text-zinc-900" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <ColorRow label="Skin Tone" palette={SKIN_TONES} value={appearance.skinTone} onPick={(hex) => applyChange({ skinTone: hex })} />
 
                   {/* Eyes Expression */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Eyes Expression
-                    </label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {EYE_TYPES.map((e) => (
-                        <button
-                          key={e.id}
-                          onClick={() => applyChange({ eyeType: e.id })}
-                          className={`p-2.5 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between ${
-                            appearance.eyeType === e.id
-                              ? 'border-blue-600 bg-blue-50 text-blue-700'
-                              : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
-                          }`}
-                        >
-                          <span>{e.label}</span>
-                          {appearance.eyeType === e.id && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <OptionGrid label="Eyes Expression" options={EYE_TYPES} value={appearance.eyeType} cols={1} onPick={(id) => applyChange({ eyeType: id })} />
 
                   {/* Mouth Expression */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Mouth Expression
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {MOUTH_TYPES.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => applyChange({ mouthType: m.id })}
-                          className={`p-2.5 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between ${
-                            appearance.mouthType === m.id
-                              ? 'border-blue-600 bg-blue-50 text-blue-700'
-                              : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
-                          }`}
-                        >
-                          <span>{m.label}</span>
-                          {appearance.mouthType === m.id && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <OptionGrid label="Mouth Expression" options={MOUTH_TYPES} value={appearance.mouthType} cols={2} onPick={(id) => applyChange({ mouthType: id })} />
 
                   {/* Eyebrows */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Eyebrows
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {EYEBROW_TYPES.map((eb) => (
-                        <button
-                          key={eb.id}
-                          onClick={() => applyChange({ eyebrowType: eb.id })}
-                          className={`p-2.5 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between ${
-                            appearance.eyebrowType === eb.id
-                              ? 'border-blue-600 bg-blue-50 text-blue-700'
-                              : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
-                          }`}
-                        >
-                          <span>{eb.label}</span>
-                          {appearance.eyebrowType === eb.id && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <OptionGrid label="Eyebrows" options={EYEBROW_TYPES} value={appearance.eyebrowType} cols={2} onPick={(id) => applyChange({ eyebrowType: id })} />
+                  <OptionGrid label="Facial Hair (uses hair color)" options={FACIAL_HAIR_TYPES} value={appearance.facialHair || 'none'} cols={2} onPick={(id) => applyChange({ facialHair: id })} />
+                  <OptionGrid label="Eyewear" options={EYEWEAR_TYPES} value={appearance.eyewear || 'none'} cols={2} onPick={(id) => applyChange({ eyewear: id })} />
+                  {(appearance.eyewear || 'none') !== 'none' && (
+                    <ColorRow label="Eyewear Frame Color" value={appearance.eyewearColor || '#18181b'} onPick={(hex) => applyChange({ eyewearColor: hex })} />
+                  )}
                 </div>
               )}
 
@@ -752,51 +689,10 @@ export const CustomizerModal: React.FC<Props> = ({
               {activeTab === 'gear' && (
                 <div className="space-y-4">
                   {/* Racket Color */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Racket Frame & Face Color
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {COLOR_PALETTE.map((c) => (
-                        <button
-                          key={c.hex}
-                          onClick={() => applyChange({ racketColor: c.hex })}
-                          className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition ${
-                            appearance.racketColor === c.hex ? 'border-blue-600 scale-110 shadow-md' : 'border-black/15'
-                          }`}
-                          style={{ backgroundColor: c.hex }}
-                          title={c.name}
-                        >
-                          {appearance.racketColor === c.hex && (
-                            <Check className={`w-3.5 h-3.5 ${c.hex === '#ffffff' ? 'text-black' : 'text-white'}`} />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <ColorRow label="Racket Frame & Face Color" value={appearance.racketColor} onPick={(hex) => applyChange({ racketColor: hex })} />
 
                   {/* Racket Pattern */}
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-2 block">
-                      Racket Sweetspot Surface Pattern
-                    </label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {RACKET_PATTERNS.map((p) => (
-                        <button
-                          key={p.id}
-                          onClick={() => applyChange({ racketPattern: p.id })}
-                          className={`p-2.5 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between ${
-                            appearance.racketPattern === p.id
-                              ? 'border-blue-600 bg-blue-50 text-blue-700'
-                              : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
-                          }`}
-                        >
-                          <span>{p.label}</span>
-                          {appearance.racketPattern === p.id && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <OptionGrid label="Racket Sweetspot Surface Pattern" options={RACKET_PATTERNS} value={appearance.racketPattern} cols={1} onPick={(id) => applyChange({ racketPattern: id })} />
 
                   {/* Player Name */}
                   <div>

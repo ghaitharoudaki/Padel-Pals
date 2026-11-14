@@ -40,8 +40,11 @@ test('Solid padel racket geometry has solid core face with NO strings and perfor
   assert.ok(group, 'Racket updated successfully');
 });
 
-test('All 8 procedural hair styles instantiate cleanly', () => {
-  const styles: HairStyle[] = ['spiky', 'short', 'long', 'ponytail', 'bun', 'mohawk', 'curly', 'bald'];
+test('All procedural hair styles instantiate cleanly', () => {
+  const styles: HairStyle[] = [
+    'spiky', 'short', 'long', 'ponytail', 'bun', 'mohawk', 'curly', 'bald',
+    'afro', 'buzz', 'undercut', 'slickback', 'side_part', 'wavy', 'braids', 'pigtails', 'twin_buns', 'dreads', 'bob', 'faux_hawk',
+  ];
   styles.forEach((style) => {
     const mesh = createHairMesh(style, '#d4af37', '#451a03');
     assert.ok(mesh instanceof THREE.Group, `Hair style ${style} created`);

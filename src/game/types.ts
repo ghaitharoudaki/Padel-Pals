@@ -60,11 +60,33 @@ export interface BallState {
   trail: Vector3D[];
 }
 
-export type HairStyle = 'spiky' | 'short' | 'long' | 'ponytail' | 'bun' | 'mohawk' | 'curly' | 'bald';
+export type HairStyle =
+  | 'spiky'
+  | 'short'
+  | 'long'
+  | 'ponytail'
+  | 'bun'
+  | 'mohawk'
+  | 'curly'
+  | 'bald'
+  | 'afro'
+  | 'buzz'
+  | 'undercut'
+  | 'slickback'
+  | 'side_part'
+  | 'wavy'
+  | 'braids'
+  | 'pigtails'
+  | 'twin_buns'
+  | 'dreads'
+  | 'bob'
+  | 'faux_hawk';
 export type EyeType = 'half_lidded' | 'confident' | 'anime' | 'fierce' | 'chill';
 export type EyebrowType = 'angled' | 'straight' | 'soft' | 'thick';
 export type MouthType = 'smirk' | 'smile' | 'determined' | 'open';
-export type HeadwearType = 'none' | 'headband' | 'cap' | 'sweatband';
+export type HeadwearType = 'none' | 'headband' | 'cap' | 'sweatband' | 'backwards_cap' | 'visor' | 'bandana' | 'beanie';
+export type FacialHair = 'none' | 'stubble' | 'mustache' | 'goatee' | 'beard';
+export type Eyewear = 'none' | 'sport_shades' | 'round_glasses' | 'square_glasses' | 'goggles';
 export type JerseyStyle = 'captain' | 'classic' | 'stripes' | 'split';
 export type RacketPattern = 'carbon' | 'clean' | 'lightning' | 'checker' | 'gradient';
 
@@ -80,6 +102,10 @@ export interface PlayerAppearance {
   mouthType: MouthType;
   headwear: HeadwearType;
   headwearColor: string;
+  /** Optional extras (older saves/peers may not send them). */
+  facialHair?: FacialHair;
+  eyewear?: Eyewear;
+  eyewearColor?: string;
   jerseyStyle: JerseyStyle;
   jerseyPrimary: string;
   jerseySecondary: string;
@@ -109,6 +135,9 @@ export const DEFAULT_APPEARANCE: PlayerAppearance = {
   mouthType: 'smirk',
   headwear: 'none',
   headwearColor: '#dc2626',
+  facialHair: 'none',
+  eyewear: 'none',
+  eyewearColor: '#18181b',
   jerseyStyle: 'captain',
   jerseyPrimary: '#dc2626', // Captain uniform #5 red
   jerseySecondary: '#18181b', // Black side stripe

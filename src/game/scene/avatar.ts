@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import {
   EyeType,
   EyebrowType,
+  Eyewear,
+  FacialHair,
   HairStyle,
   HeadwearType,
   JerseyStyle,
@@ -587,7 +589,7 @@ function createJerseyTexture(
 }
 
 /**
- * Procedural 3D Hair Generator (8 distinct styles: spiky, short, long, ponytail, bun, mohawk, curly, bald)
+ * Procedural 3D Hair Generator (20 styles; see HairStyle)
  */
 export function createHairMesh(
   style: HairStyle,
@@ -748,9 +750,286 @@ export function createHairMesh(
       out.position.copy(puff.position);
       hairGroup.add(out);
     });
+  } else {
+    buildExtraHairStyle(style, hairGroup, hairMat, secondaryColor);
   }
 
   return hairGroup;
+}
+
+type Triple = [number, number, number];
+
+/** Adds a toon mesh plus its comic outline shell to `group`. */
+function addOutlinedPart(
+  group: THREE.Group,
+  geo: THREE.BufferGeometry,
+  mat: THREE.Material,
+  pos: Triple,
+  rot: Triple = [0, 0, 0],
+  scale: Triple = [1, 1, 1],
+  outlineScale = 1.08
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(...pos);
+  mesh.rotation.set(...rot);
+  mesh.scale.set(...scale);
+  group.add(mesh);
+  const out = createOutline(geo, 1);
+  out.position.set(...pos);
+  out.rotation.set(...rot);
+  out.scale.set(scale[0] * outlineScale, scale[1] * outlineScale, scale[2] * outlineScale);
+  group.add(out);
+  return mesh;
+}
+
+/** Hair cap that hugs the skull; `coverage` is the polar angle fraction covered from the crown. */
+function addHairCap(group: THREE.Group, mat: THREE.Material, coverage = 0.7, radius = 0.38, y = 0.08): void {
+  const geo = new THREE.SphereGeometry(radius, 18, 16, 0, Math.PI * 2, 0, Math.PI * coverage);
+  addOutlinedPart(group, geo, mat, [0, y, -0.02], [0, 0, 0], [1, 1, 1], 1.07);
+}
+
+/**
+ * Additional procedural hair styles (afro, buzz, undercut, slick back, side part, wavy, braids,
+ * pigtails, twin buns, dreads, bob, faux hawk). Two-tone styles use `secondaryColor`.
+ */
+function buildExtraHairStyle(style: HairStyle, g: THREE.Group, hairMat: THREE.Material, secondaryColor: string): void {
+  const accentMat = new THREE.MeshToonMaterial({ color: secondaryColor, gradientMap: getSharedToonGradient() });
+
+  switch (style) {
+    case 'afro': {
+      const geo = new THREE.SphereGeometry(0.5, 20, 18);
+      // Centred behind and above the skull so the face stays clear.
+      addOutlinedPart(g, geo, hairMat, [0, 0.28, -0.18], [0, 0, 0], [1.05, 0.85, 1.0], 1.05);
+      const puff = new THREE.SphereGeometry(0.12, 10, 10);
+      ([
+        [-0.38, 0.32, 0.12],
+        [0.38, 0.32, 0.12],
+        [0, 0.58, 0.05],
+        [-0.25, 0.52, 0.2],
+        [0.25, 0.52, 0.2],
+      ] as Triple[]).forEach((p) => addOutlinedPart(g, puff, hairMat, p));
+      break;
+    }
+    case 'buzz': {
+      const geo = new THREE.SphereGeometry(0.372, 18, 16, 0, Math.PI * 2, 0, Math.PI * 0.6);
+      addOutlinedPart(g, geo, hairMat, [0, 0.06, -0.02], [0, 0, 0], [1.03, 1, 1.02], 1.03);
+      break;
+    }
+    case 'undercut': {
+      // Shaved sides in the accent colour, longer swept top in the main colour.
+      const sides = new THREE.SphereGeometry(0.375, 18, 16, 0, Math.PI * 2, Math.PI * 0.18, Math.PI * 0.42);
+      addOutlinedPart(g, sides, accentMat, [0, 0.06, -0.02], [0, 0, 0], [1.03, 1, 1.02], 1.03);
+      const top = new THREE.SphereGeometry(0.34, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.32);
+      addOutlinedPart(g, top, hairMat, [0, 0.2, -0.02], [0, 0, 0], [1.05, 1.25, 1.1]);
+      const sweep = new THREE.BoxGeometry(0.42, 0.12, 0.3);
+      addOutlinedPart(g, sweep, hairMat, [0.04, 0.42, 0.12], [-0.35, 0, -0.18]);
+      break;
+    }
+    case 'slickback': {
+      addHairCap(g, hairMat, 0.62, 0.385, 0.07);
+      const slab = new THREE.SphereGeometry(0.3, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5);
+      addOutlinedPart(g, slab, hairMat, [0, 0.24, -0.1], [-0.35, 0, 0], [1.1, 0.55, 1.35]);
+      break;
+    }
+    case 'side_part': {
+      addHairCap(g, hairMat, 0.66);
+      const swoop = new THREE.CapsuleGeometry(0.1, 0.36, 4, 10);
+      addOutlinedPart(g, swoop, hairMat, [0.08, 0.32, 0.25], [0, 0, Math.PI / 2 - 0.25], [1, 1, 0.8]);
+      const part = new THREE.BoxGeometry(0.03, 0.02, 0.4);
+      const partMesh = new THREE.Mesh(part, new THREE.MeshBasicMaterial({ color: 0x09090b }));
+      partMesh.position.set(-0.12, 0.43, 0.02);
+      partMesh.rotation.z = 0.25;
+      g.add(partMesh);
+      break;
+    }
+    case 'wavy': {
+      addHairCap(g, hairMat, 0.72);
+      const wave = new THREE.TorusGeometry(0.1, 0.045, 8, 14, Math.PI);
+      for (let i = 0; i < 6; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        const row = Math.floor(i / 2);
+        addOutlinedPart(g, wave, hairMat, [side * 0.33, 0.05 - row * 0.14, -0.05 - row * 0.03], [0, side * Math.PI / 2, Math.PI / 2]);
+      }
+      break;
+    }
+    case 'braids': {
+      addHairCap(g, hairMat, 0.66);
+      const bead = new THREE.SphereGeometry(0.065, 10, 8);
+      [-0.18, 0.18].forEach((sx) => {
+        for (let i = 0; i < 6; i++) {
+          addOutlinedPart(g, bead, hairMat, [sx, 0.02 - i * 0.085, -0.34 - i * 0.012], [0, 0, 0], [1, 1.15, 1]);
+        }
+        const tie = new THREE.CylinderGeometry(0.035, 0.035, 0.04, 8);
+        addOutlinedPart(g, tie, accentMat, [sx, -0.5, -0.41]);
+      });
+      // Cornrow ridges along the top
+      const ridge = new THREE.CapsuleGeometry(0.035, 0.42, 4, 6);
+      [-0.15, -0.05, 0.05, 0.15].forEach((x) => {
+        addOutlinedPart(g, ridge, hairMat, [x, 0.36, -0.05], [Math.PI / 2 - 0.2, 0, 0], [1, 1, 1], 1.15);
+      });
+      break;
+    }
+    case 'pigtails': {
+      addHairCap(g, hairMat, 0.7);
+      const tail = new THREE.ConeGeometry(0.13, 0.45, 12);
+      [-1, 1].forEach((side) => {
+        addOutlinedPart(g, tail, hairMat, [side * 0.44, 0.12, -0.1], [0, 0, side * (Math.PI / 2 + 0.55)]);
+        const tie = new THREE.TorusGeometry(0.07, 0.025, 6, 12);
+        addOutlinedPart(g, tie, accentMat, [side * 0.34, 0.22, -0.08], [0, Math.PI / 2, 0]);
+      });
+      break;
+    }
+    case 'twin_buns': {
+      addHairCap(g, hairMat, 0.7);
+      const bun = new THREE.SphereGeometry(0.14, 14, 12);
+      [-1, 1].forEach((side) => addOutlinedPart(g, bun, hairMat, [side * 0.26, 0.42, -0.08]));
+      break;
+    }
+    case 'dreads': {
+      addHairCap(g, hairMat, 0.68);
+      const lock = new THREE.CapsuleGeometry(0.045, 0.32, 3, 6);
+      const tip = new THREE.SphereGeometry(0.05, 8, 6);
+      for (let i = 0; i < 11; i++) {
+        const a = Math.PI * 0.15 + (i / 10) * Math.PI * 0.7; // around the back of the head
+        const x = Math.cos(a) * 0.36;
+        const z = -Math.sin(a) * 0.32;
+        addOutlinedPart(g, lock, hairMat, [x, -0.08, z], [z * 0.6, 0, -x * 0.5], [1, 1, 1], 1.12);
+        addOutlinedPart(g, tip, accentMat, [x * 1.08, -0.3, z * 1.08]);
+      }
+      break;
+    }
+    case 'bob': {
+      addHairCap(g, hairMat, 0.72);
+      const shell = new THREE.CylinderGeometry(0.4, 0.42, 0.34, 20, 1, true, Math.PI * 0.24, Math.PI * 1.52);
+      const mesh = addOutlinedPart(g, shell, hairMat, [0, -0.04, -0.02]);
+      (mesh.material as THREE.MeshToonMaterial).side = THREE.DoubleSide;
+      const bangs = new THREE.BoxGeometry(0.5, 0.1, 0.12);
+      addOutlinedPart(g, bangs, hairMat, [0, 0.25, 0.28], [0.35, 0, 0]);
+      break;
+    }
+    case 'faux_hawk': {
+      const sides = new THREE.SphereGeometry(0.375, 18, 16, 0, Math.PI * 2, 0, Math.PI * 0.58);
+      addOutlinedPart(g, sides, hairMat, [0, 0.06, -0.02], [0, 0, 0], [1.03, 1, 1.02], 1.03);
+      const cone = new THREE.ConeGeometry(1, 1, 7);
+      [0.22, 0.06, -0.1, -0.26].forEach((z, i) => {
+        addOutlinedPart(g, cone, i === 0 ? accentMat : hairMat, [0, 0.42 - Math.abs(z) * 0.2, z], [0.4 - i * 0.25, 0, 0], [0.11, 0.3, 0.11], 1.1);
+      });
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+/**
+ * Facial hair (stubble, mustache, goatee, full beard) using the hair colour.
+ */
+export function createFacialHairMesh(type: FacialHair | undefined, color: string): THREE.Group {
+  const group = new THREE.Group();
+  if (!type || type === 'none') return group;
+  const mat = new THREE.MeshToonMaterial({ color, gradientMap: getSharedToonGradient() });
+
+  if (type === 'stubble') {
+    const geo = new THREE.SphereGeometry(0.37, 18, 12, Math.PI * 0.12, Math.PI * 0.76, Math.PI * 0.65, Math.PI * 0.25);
+    const stubbleMat = new THREE.MeshToonMaterial({
+      color,
+      gradientMap: getSharedToonGradient(),
+      transparent: true,
+      opacity: 0.3,
+    });
+    const mesh = new THREE.Mesh(geo, stubbleMat);
+    mesh.position.set(0, -0.005, 0.005);
+    group.add(mesh);
+    return group;
+  }
+
+  if (type === 'mustache' || type === 'goatee') {
+    const stache = new THREE.CapsuleGeometry(0.02, 0.07, 4, 8);
+    [-1, 1].forEach((side) => {
+      addOutlinedPart(group, stache, mat, [side * 0.045, -0.085, 0.352], [0, 0, side * (Math.PI / 2 - 0.3)], [1, 1, 1], 1.15);
+    });
+  }
+  if (type === 'goatee') {
+    const chin = new THREE.ConeGeometry(0.06, 0.12, 10);
+    addOutlinedPart(group, chin, mat, [0, -0.29, 0.29], [Math.PI + 0.35, 0, 0], [1, 1, 0.8], 1.12);
+  }
+  if (type === 'beard') {
+    const geo = new THREE.SphereGeometry(0.385, 18, 12, Math.PI * 0.1, Math.PI * 0.8, Math.PI * 0.62, Math.PI * 0.3);
+    const mesh = addOutlinedPart(group, geo, mat, [0, -0.01, 0.005], [0, 0, 0], [1, 1, 1], 1.04);
+    (mesh.material as THREE.MeshToonMaterial).side = THREE.DoubleSide;
+    const stache = new THREE.CapsuleGeometry(0.02, 0.12, 4, 8);
+    addOutlinedPart(group, stache, mat, [0, -0.085, 0.352], [0, 0, Math.PI / 2], [1, 1, 1], 1.12);
+  }
+  return group;
+}
+
+/**
+ * Eyewear: wraparound sport shades, round or square frames, or swim-style goggles.
+ */
+export function createEyewearMesh(type: Eyewear | undefined, color: string): THREE.Group {
+  const group = new THREE.Group();
+  if (!type || type === 'none') return group;
+  const frameMat = new THREE.MeshToonMaterial({ color, gradientMap: getSharedToonGradient() });
+  const lensMat = new THREE.MeshBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.85 });
+  const clearLensMat = new THREE.MeshBasicMaterial({ color: 0xbae6fd, transparent: true, opacity: 0.25 });
+  const eyeY = -0.035;
+  const z = 0.37;
+
+  if (type === 'sport_shades') {
+    const visor = new THREE.CylinderGeometry(0.39, 0.39, 0.1, 24, 1, true, -Math.PI * 0.32, Math.PI * 0.64);
+    const lens = new THREE.Mesh(visor, lensMat);
+    lens.material.side = THREE.DoubleSide;
+    lens.position.set(0, eyeY, 0);
+    group.add(lens);
+    const rim = new THREE.TorusGeometry(0.39, 0.012, 6, 32, Math.PI * 0.64);
+    const rimMesh = new THREE.Mesh(rim, frameMat);
+    rimMesh.rotation.set(Math.PI / 2, 0, Math.PI * 0.18);
+    rimMesh.position.set(0, eyeY + 0.05, 0);
+    group.add(rimMesh);
+  } else if (type === 'round_glasses' || type === 'square_glasses') {
+    const ring =
+      type === 'round_glasses'
+        ? new THREE.TorusGeometry(0.075, 0.013, 8, 20)
+        : new THREE.TorusGeometry(0.08, 0.013, 4, 4);
+    const lensGeo = new THREE.CircleGeometry(type === 'round_glasses' ? 0.072 : 0.08, type === 'round_glasses' ? 20 : 4);
+    [-1, 1].forEach((side) => {
+      const frame = new THREE.Mesh(ring, frameMat);
+      frame.position.set(side * 0.105, eyeY, z);
+      if (type === 'square_glasses') frame.rotation.z = Math.PI / 4;
+      group.add(frame);
+      const lens = new THREE.Mesh(lensGeo, clearLensMat);
+      lens.position.set(side * 0.105, eyeY, z - 0.002);
+      if (type === 'square_glasses') lens.rotation.z = Math.PI / 4;
+      group.add(lens);
+      const arm = new THREE.BoxGeometry(0.012, 0.012, 0.3);
+      const armMesh = new THREE.Mesh(arm, frameMat);
+      armMesh.position.set(side * 0.33, eyeY + 0.02, 0.2);
+      armMesh.rotation.y = side * 0.35;
+      group.add(armMesh);
+    });
+    const bridge = new THREE.BoxGeometry(0.06, 0.012, 0.012);
+    const bridgeMesh = new THREE.Mesh(bridge, frameMat);
+    bridgeMesh.position.set(0, eyeY + 0.01, z + 0.005);
+    group.add(bridgeMesh);
+  } else if (type === 'goggles') {
+    const strap = new THREE.TorusGeometry(0.385, 0.025, 6, 32);
+    const strapMesh = new THREE.Mesh(strap, frameMat);
+    strapMesh.rotation.x = Math.PI / 2;
+    strapMesh.position.set(0, eyeY, 0);
+    group.add(strapMesh);
+    const cup = new THREE.CylinderGeometry(0.08, 0.08, 0.05, 16);
+    [-1, 1].forEach((side) => {
+      const mesh = new THREE.Mesh(cup, lensMat);
+      mesh.rotation.x = Math.PI / 2;
+      mesh.position.set(side * 0.1, eyeY, z);
+      group.add(mesh);
+      const out = createOutline(cup, 1.12);
+      out.rotation.x = Math.PI / 2;
+      out.position.copy(mesh.position);
+      group.add(out);
+    });
+  }
+  return group;
 }
 
 /**
@@ -784,6 +1063,43 @@ function createHeadwearMesh(type: HeadwearType, color: string): THREE.Group {
     visor.position.set(0, 0.14, 0.20);
     visor.scale.set(1.1, 1, 1.4);
     group.add(visor);
+  } else if (type === 'backwards_cap') {
+    const domeGeo = new THREE.SphereGeometry(0.39, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.48);
+    addOutlinedPart(group, domeGeo, mat, [0, 0.14, 0], [0, 0, 0], [1, 1, 1], 1.04);
+    const visorGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.02, 16, 1, false, -Math.PI / 3, (Math.PI * 2) / 3);
+    const visor = new THREE.Mesh(visorGeo, mat);
+    visor.position.set(0, 0.14, -0.2);
+    visor.rotation.y = Math.PI;
+    visor.scale.set(1.0, 1, 1.2);
+    group.add(visor);
+    const snap = new THREE.TorusGeometry(0.07, 0.012, 6, 12, Math.PI);
+    const snapMesh = new THREE.Mesh(snap, new THREE.MeshBasicMaterial({ color: 0x09090b }));
+    snapMesh.position.set(0, 0.16, -0.37);
+    group.add(snapMesh);
+  } else if (type === 'visor') {
+    const bandGeo = new THREE.TorusGeometry(0.385, 0.04, 8, 28);
+    addOutlinedPart(group, bandGeo, mat, [0, 0.16, 0], [Math.PI / 2, 0, 0], [1, 1, 1], 1.06);
+    const brimGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.02, 18, 1, false, -Math.PI / 3, (Math.PI * 2) / 3);
+    const brim = new THREE.Mesh(brimGeo, mat);
+    brim.position.set(0, 0.15, 0.2);
+    brim.scale.set(1.1, 1, 1.45);
+    group.add(brim);
+  } else if (type === 'bandana') {
+    const wrap = new THREE.SphereGeometry(0.395, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.42);
+    addOutlinedPart(group, wrap, mat, [0, 0.1, -0.01], [0, 0, 0], [1, 1, 1], 1.03);
+    const knot = new THREE.SphereGeometry(0.06, 10, 8);
+    addOutlinedPart(group, knot, mat, [0, 0.16, -0.4]);
+    const tail = new THREE.ConeGeometry(0.06, 0.2, 6);
+    [-1, 1].forEach((side) =>
+      addOutlinedPart(group, tail, mat, [side * 0.06, 0.06, -0.43], [0.4, 0, side * 0.35])
+    );
+  } else if (type === 'beanie') {
+    const dome = new THREE.SphereGeometry(0.405, 18, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
+    addOutlinedPart(group, dome, mat, [0, 0.12, -0.01], [0, 0, 0], [1, 1.08, 1], 1.04);
+    const cuff = new THREE.TorusGeometry(0.4, 0.05, 8, 28);
+    addOutlinedPart(group, cuff, mat, [0, 0.14, -0.01], [Math.PI / 2, 0, 0], [1, 1, 1], 1.05);
+    const pom = new THREE.SphereGeometry(0.09, 12, 10);
+    addOutlinedPart(group, pom, mat, [0, 0.58, -0.02]);
   }
 
   return group;
@@ -817,6 +1133,9 @@ export function buildPadelAvatar(
     mouthType: custom.mouthType || 'smirk',
     headwear: custom.headwear || 'none',
     headwearColor: custom.headwearColor || '#dc2626',
+    facialHair: custom.facialHair || 'none',
+    eyewear: custom.eyewear || 'none',
+    eyewearColor: custom.eyewearColor || '#18181b',
     jerseyStyle: custom.jerseyStyle || 'captain',
     jerseyPrimary: custom.jerseyPrimary || custom.jerseyColor || (team === 'blue' ? '#2563eb' : '#dc2626'),
     jerseySecondary: custom.jerseySecondary || '#18181b',
@@ -916,6 +1235,12 @@ export function buildPadelAvatar(
   // Headwear
   let headwearMesh = createHeadwearMesh(app.headwear, app.headwearColor);
   headGroup.add(headwearMesh);
+
+  // Facial hair & eyewear
+  let facialHairMesh = createFacialHairMesh(app.facialHair, app.hairColor);
+  headGroup.add(facialHairMesh);
+  let eyewearMesh = createEyewearMesh(app.eyewear, app.eyewearColor || '#18181b');
+  headGroup.add(eyewearMesh);
 
   // 4. FLOATING SPHERICAL HANDS (NO ARMS) - Signature "Just Volleyball" Style!
   const handGeo = new THREE.SphereGeometry(0.105, 16, 16);
@@ -1134,6 +1459,14 @@ export function buildPadelAvatar(
     headGroup.remove(headwearMesh);
     headwearMesh = createHeadwearMesh(app.headwear, app.headwearColor);
     headGroup.add(headwearMesh);
+
+    headGroup.remove(facialHairMesh);
+    facialHairMesh = createFacialHairMesh(app.facialHair, app.hairColor);
+    headGroup.add(facialHairMesh);
+
+    headGroup.remove(eyewearMesh);
+    eyewearMesh = createEyewearMesh(app.eyewear, app.eyewearColor || '#18181b');
+    headGroup.add(eyewearMesh);
 
     // Refresh Racket
     racketBuilt.updateRacket(
