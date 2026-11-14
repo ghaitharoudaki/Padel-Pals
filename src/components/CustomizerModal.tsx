@@ -11,7 +11,7 @@ import {
   PlayerAppearance,
   RacketPattern,
 } from '../game/types';
-import { buildPadelAvatar, AvatarController } from '../game/avatar';
+import { buildPadelAvatar, AvatarController } from '../game/scene/avatar';
 import {
   RotateCcw,
   Sparkles,

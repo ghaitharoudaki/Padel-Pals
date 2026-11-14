@@ -13,7 +13,7 @@ import {
   Zap,
   Settings2,
 } from 'lucide-react';
-import { LobbySlot } from '../game/multiplayer';
+import { LobbySlot } from '../game/net/multiplayer';
 import { RoomConfig } from '../game/types';
 
 interface Props {

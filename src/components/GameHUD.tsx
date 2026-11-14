@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScoreState, ShotType, GameMode, Side } from '../game/types';
-import { describeMatchFormat } from '../game/rules';
+import { describeMatchFormat } from '../game/engine/rules';
 import { Volume2, VolumeX, HelpCircle, LogOut, Pause, Zap, WifiOff } from 'lucide-react';
 import { padelAudio } from '../game/audio';
 
