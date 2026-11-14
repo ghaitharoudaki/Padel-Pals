@@ -24,7 +24,8 @@ import { WebSocketServer, WebSocket, RawData } from 'ws';
  *   server -> client  { op: 'host_left' }               (to clients)
  *   server -> client  { op: 'msg', from, data }
  *   server -> client  { op: 'error', code, message }
- * Binary frames are forwarded untouched: host -> every client, client -> host.
+ * Binary frames: host -> every client untouched; client -> host prefixed with
+ *   [0xFF, idLength, ...senderPeerId] so the host knows who sent it.
  */
 
 const app = express();
@@ -127,7 +128,10 @@ wss.on('connection', (rawWs) => {
           if (client.readyState === WebSocket.OPEN) client.send(data, { binary: true });
         });
       } else if (ws.role === 'client' && room.host.readyState === WebSocket.OPEN) {
-        room.host.send(data, { binary: true });
+        // Tag client frames with the sender id: [0xFF, idLength, ...id, ...payload]
+        const id = Buffer.from(ws.peerId, 'utf8');
+        const payload = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer);
+        room.host.send(Buffer.concat([Buffer.from([0xff, id.length]), id, payload]), { binary: true });
       }
       return;
     }

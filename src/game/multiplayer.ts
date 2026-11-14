@@ -386,10 +386,7 @@ export class MultiplayerClient {
     this.disconnect(true);
     const cleanCode = roomCode.toUpperCase().trim();
     if (!/^[A-Z0-9]{4,8}$/.test(cleanCode)) {
-      this.callbacks.onConnectionStatusChanged?.(
-        'disconnected',
-        'Room codes are 4-8 letters or numbers (e.g. "K7QPA").'
-      );
+      this.failWith('Room codes are 4-8 letters or numbers (e.g. "K7QPA").');
       return;
     }
 
@@ -403,11 +400,9 @@ export class MultiplayerClient {
     this.joinTimeoutTimer = setTimeout(() => {
       if (session !== this.sessionId) return;
       if (!this.hasJoinedRoom) {
-        this.callbacks.onConnectionStatusChanged?.(
-          'disconnected',
+        this.failWith(
           `Could not reach room "${cleanCode}". Check the code and that the host is still in the lobby.`
         );
-        this.disconnect(true);
       }
     }, 20000);
 
@@ -586,7 +581,17 @@ export class MultiplayerClient {
   private handleRelayFrame(raw: unknown) {
     this.lastPacketReceivedTime = Date.now();
     if (typeof raw !== 'string') {
-      this.handleIncomingRawMessage(raw, this.isHost ? undefined : 'host');
+      if (!this.isHost) {
+        this.handleIncomingRawMessage(raw, 'host');
+        return;
+      }
+      // Host: the relay prefixes client frames with the sender's peer id.
+      const bytes = new Uint8Array(raw as ArrayBuffer);
+      if (bytes.length < 2 || bytes[0] !== 0xff) return;
+      const idLength = bytes[1];
+      if (bytes.length < 2 + idLength) return;
+      const peerId = new TextDecoder().decode(bytes.subarray(2, 2 + idLength));
+      this.handleIncomingRawMessage(bytes.subarray(2 + idLength), peerId);
       return;
     }
 
@@ -635,9 +640,7 @@ export class MultiplayerClient {
         break;
       }
       case 'error': {
-        const message: string = msg.message || 'Connection error.';
-        this.callbacks.onConnectionStatusChanged?.('disconnected', message);
-        this.disconnect(true);
+        this.failWith(msg.message || 'Connection error.');
         break;
       }
     }
@@ -654,20 +657,14 @@ export class MultiplayerClient {
     if (wasHost) {
       // Host cannot transparently recover the room (clients were dropped by the server).
       this.isConnected = false;
-      this.callbacks.onConnectionStatusChanged?.(
-        'disconnected',
-        'Lost connection to the game server. Create a new room to keep playing online.'
-      );
+      this.failWith('Lost connection to the game server. Create a new room to keep playing online.');
       return;
     }
 
     this.isConnected = false;
     this.hasJoinedRoom = false;
     if (this.reconnectAttempts >= 4 || !appearance) {
-      this.callbacks.onConnectionStatusChanged?.(
-        'disconnected',
-        'Lost connection to the game server.'
-      );
+      this.failWith('Lost connection to the game server.');
       this.callbacks.onHostDisconnected?.();
       return;
     }
@@ -727,10 +724,7 @@ export class MultiplayerClient {
       const PeerCtor = (Peer as any)?.default || (Peer as any)?.Peer || Peer;
       const hasWebRTC = typeof (window as any).RTCPeerConnection !== 'undefined';
       if (typeof PeerCtor !== 'function' || !hasWebRTC) {
-        this.callbacks.onConnectionStatusChanged?.(
-          'disconnected',
-          'Online play needs the Padel Pals server or a browser with WebRTC support.'
-        );
+        this.failWith('Online play needs the Padel Pals server or a browser with WebRTC support.');
         return;
       }
 
@@ -762,11 +756,7 @@ export class MultiplayerClient {
         if (session !== this.sessionId) return;
         if (asHost && err.type === 'unavailable-id') {
           this.isConnected = false;
-          this.callbacks.onConnectionStatusChanged?.(
-            'disconnected',
-            `Room code "${roomId}" is already in use. Choose a new room code.`
-          );
-          this.disconnect(true);
+          this.failWith(`Room code "${roomId}" is already in use. Choose a new room code.`);
           return;
         }
         if (err.type === 'peer-unavailable' && !asHost) {
@@ -789,10 +779,7 @@ export class MultiplayerClient {
       });
     } catch (e) {
       console.warn('PeerJS initialization failed:', e);
-      this.callbacks.onConnectionStatusChanged?.(
-        'disconnected',
-        'Could not start an online session in this browser.'
-      );
+      this.failWith('Could not start an online session in this browser.');
     }
   }
 
@@ -881,14 +868,19 @@ export class MultiplayerClient {
     return null;
   }
 
+  /** Tear down, then report a terminal error (so listeners see the cleared room state). */
+  private failWith(message: string) {
+    this.disconnect(true);
+    this.callbacks.onConnectionStatusChanged?.('disconnected', message);
+  }
+
   private handleHostGone(message: string) {
     const wasJoined = this.hasJoinedRoom || this.isInMatch;
     this.isConnected = false;
     this.hasJoinedRoom = false;
     this.isInMatch = false;
-    this.callbacks.onConnectionStatusChanged?.('disconnected', message);
+    this.failWith(message);
     if (wasJoined) this.callbacks.onHostDisconnected?.();
-    this.disconnect(true);
   }
 
   /** Host: a client's connection dropped. */
@@ -1075,7 +1067,7 @@ export class MultiplayerClient {
           // Ignore spoofed slots: a peer may only drive the slot its player holds.
           const playerId = sourcePeer ? this.connectionPlayerIds.get(sourcePeer) : undefined;
           const owner = this.slots.find((s) => s.slot === decoded.slot);
-          if (playerId && owner?.playerId !== playerId) return;
+          if (!playerId || owner?.playerId !== playerId) return;
           const latest = decoded.inputs[0];
           if (latest.seq <= (this.ackedInputSeq[decoded.slot] || 0) && latest.seq > 100) return;
           this.ackedInputSeq[decoded.slot] = latest.seq;
@@ -1114,8 +1106,7 @@ export class MultiplayerClient {
             if (data.score) this.callbacks.onScoreReceived?.(data.score);
           }
         } else {
-          this.callbacks.onConnectionStatusChanged?.('disconnected', data.error || 'Could not join room');
-          this.disconnect(true);
+          this.failWith(data.error || 'Could not join room');
         }
         break;
       }
@@ -1133,8 +1124,7 @@ export class MultiplayerClient {
       }
       case 'kicked': {
         if (this.isHost) return;
-        this.callbacks.onConnectionStatusChanged?.('disconnected', data.reason || 'Removed from the room.');
-        this.disconnect(true);
+        this.failWith(data.reason || 'Removed from the room.');
         break;
       }
       case 'slot_change_request': {
@@ -1172,7 +1162,7 @@ export class MultiplayerClient {
         if (!this.isHost) return;
         const playerId = sourcePeer ? this.connectionPlayerIds.get(sourcePeer) : undefined;
         const owner = this.slots.find((s) => s.slot === data.swing?.slot);
-        if (!data.swing || (playerId && owner?.playerId !== playerId)) return;
+        if (!data.swing || !playerId || owner?.playerId !== playerId) return;
         const rtt = sourcePeer ? this.peerRtt.get(sourcePeer) ?? 80 : 80;
         this.callbacks.onRemoteSwing?.(data.swing as RemoteSwing, rtt);
         break;
@@ -1225,10 +1215,12 @@ export class MultiplayerClient {
           this.peerRtt.set(sourcePeer, rtt);
           const playerId = this.connectionPlayerIds.get(sourcePeer);
           const slot = this.slots.find((s) => s.playerId === playerId);
-          if (slot) slot.ping = Math.round(rtt / 2);
+          const newPing = Math.round(rtt / 2);
+          const changed = !!slot && Math.abs(slot.ping - newPing) >= 15;
+          if (slot) slot.ping = newPing;
           const worst = Math.max(0, ...Array.from(this.peerRtt.values()));
           this.pingMs = Math.round(worst / 2);
-          if (!this.isInMatch) this.broadcastLobbyState();
+          if (changed && !this.isInMatch) this.broadcastLobbyState();
         } else {
           this.pingMs = Math.round(rtt / 2);
           this.adaptiveBufferDelayMs = Math.max(70, Math.min(180, 2 * SNAPSHOT_INTERVAL_MS + this.getJitterMs()));

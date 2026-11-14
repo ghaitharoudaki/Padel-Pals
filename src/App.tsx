@@ -1207,7 +1207,6 @@ export default function App() {
     let lastDebugSync = 0;
     let lastFootstepTime = 0;
     let lastSnapshotBroadcastTime = 0;
-    let lastInputSendTime = 0;
     let lastServeHint = false;
     const camForwardVec = new THREE.Vector3();
     const menuBackground = new THREE.Color(0x1a120c);
@@ -1271,7 +1270,8 @@ export default function App() {
       inputManager.setPlayerSide(local.side);
 
       const move = isFrozenRef.current ? { x: 0, z: 0, sprint: false } : inputManager.getMovementInput();
-      if (now - lastInputSendTime >= 15) {
+      // One input per fixed tick so host simulation and client replay stay step-aligned.
+      {
         const seq = client.sendInput({
           dt,
           moveX: move.x,
@@ -1288,7 +1288,6 @@ export default function App() {
           pendingInputs.push({ seq, x: move.x, z: move.z, sprint: move.sprint, dt });
           if (pendingInputs.length > 90) pendingInputs.shift();
         }
-        lastInputSendTime = now;
       }
       updatePlayerMovement(local, move, dt, isDoubles);
       tickSwing(local, dt);
@@ -1700,6 +1699,7 @@ export default function App() {
       renderer
     );
 
+    gameLoop.keepAliveWhenHidden = () => isOnlineHost() && !isMenuScreen(screenStateRef.current);
     gameLoop.start();
 
     return () => {
