@@ -13,7 +13,7 @@ import {
   Zap,
   Settings2,
 } from 'lucide-react';
-import { LobbySlot } from '../game/multiplayer';
+import { LobbySlot } from '../game/net/multiplayer';
 import { RoomConfig } from '../game/types';
 
 interface Props {
@@ -96,8 +96,8 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
   const is1v1 = roomConfig.mode === '1v1';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl bg-zinc-900 border-4 border-black rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-6 text-white max-h-[92vh] flex flex-col">
+    <div className="pp-overlay z-50 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-2xl bg-zinc-900 border-4 border-black rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-6 short:p-3 text-white flex flex-col">
         {/* Close Button */}
         <button
           onClick={onClose}

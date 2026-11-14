@@ -147,13 +147,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         }
       `}</style>
 
-      <div className="absolute inset-0 z-40 pointer-events-none flex flex-col justify-between p-6 sm:p-10 select-none overflow-hidden font-sans">
+      <div className="absolute inset-0 z-40 pointer-events-none flex flex-col justify-between p-6 sm:p-10 short:p-3 select-none overflow-hidden font-sans safe-top">
         {/* 1. TOP BAR: LOGO + TAGLINE (LEFT) & COMPACT UTILITY BUTTONS (RIGHT) */}
         <div className="pointer-events-auto flex items-start justify-between w-full">
           {/* LOGO DROPPING IN WITH SQUASH AND STRETCH */}
           <div className="flex flex-col items-start anim-logo-drop">
             <h1
-              className="font-brand text-6xl sm:text-7xl lg:text-8xl tracking-wider text-amber-400 uppercase select-none leading-none cursor-default"
+              className="font-brand text-5xl sm:text-7xl lg:text-8xl short:text-4xl tracking-wider text-amber-400 uppercase select-none leading-none cursor-default"
               style={{
                 WebkitTextStroke: '4px #0f172a',
                 filter: 'drop-shadow(6px 6px 0px #0f172a)',
@@ -162,7 +162,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               PADEL PALS
             </h1>
             {/* ONE Short Tagline Only (No pill chips) */}
-            <p className="font-brand text-sm sm:text-base tracking-widest text-amber-300 uppercase drop-shadow mt-1 select-none">
+            <p className="font-brand text-sm sm:text-base short:text-[10px] tracking-widest text-amber-300 uppercase drop-shadow mt-1 select-none">
               ARCADE DOUBLES PADEL
             </p>
           </div>
@@ -196,7 +196,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
         {/* 2. MAIN MENU VERTICAL LIST (LEFT SIDE - NO SUB-LABELS, LARGE CLEAN ICONS & LABELS) */}
         {!isPlayModalOpen && (
-          <div className="pointer-events-auto my-auto flex flex-col gap-4 max-w-xs sm:max-w-sm w-full py-4">
+          <div className="pointer-events-auto my-auto flex flex-col gap-4 short:gap-2 max-w-xs sm:max-w-sm short:max-w-[250px] w-full py-4 short:py-1">
             {/* PLAY BUTTON */}
             <button
               onMouseEnter={handleHover}
@@ -206,13 +206,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                   onOpenModeSelect?.();
                 });
               }}
-              className="anim-btn-1 group relative w-full py-4 px-6 bg-amber-400 hover:bg-amber-300 text-slate-950 border-4 border-slate-900 rounded-2xl -rotate-1 hover:rotate-0 hover:scale-102 transition-all active:scale-95 active:translate-y-1 active:translate-x-1 cursor-pointer flex items-center gap-4"
+              className="anim-btn-1 group relative w-full py-4 short:py-1.5 px-6 short:px-4 bg-amber-400 hover:bg-amber-300 text-slate-950 border-4 border-slate-900 rounded-2xl -rotate-1 hover:rotate-0 hover:scale-102 transition-all active:scale-95 active:translate-y-1 active:translate-x-1 cursor-pointer flex items-center gap-4"
               style={{ boxShadow: '6px 6px 0px #0f172a' }}
             >
-              <div className="w-12 h-12 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center border-2 border-slate-900 shadow">
+              <div className="w-12 h-12 short:w-8 short:h-8 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center border-2 border-slate-900 shadow">
                 <Play className="w-7 h-7 fill-current ml-0.5" />
               </div>
-              <span className="font-brand text-4xl sm:text-5xl uppercase tracking-wide leading-none">
+              <span className="font-brand text-4xl sm:text-5xl short:text-2xl uppercase tracking-wide leading-none">
                 PLAY
               </span>
             </button>
@@ -221,13 +221,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             <button
               onMouseEnter={handleHover}
               onClick={() => handleClick(onOpenLocker)}
-              className="anim-btn-2 group relative w-full py-3.5 px-6 bg-rose-500 hover:bg-rose-400 text-white border-4 border-slate-900 rounded-2xl rotate-1 hover:rotate-0 hover:scale-102 transition-all active:scale-95 active:translate-y-1 active:translate-x-1 cursor-pointer flex items-center gap-4"
+              className="anim-btn-2 group relative w-full py-3.5 short:py-1.5 px-6 short:px-4 bg-rose-500 hover:bg-rose-400 text-white border-4 border-slate-900 rounded-2xl rotate-1 hover:rotate-0 hover:scale-102 transition-all active:scale-95 active:translate-y-1 active:translate-x-1 cursor-pointer flex items-center gap-4"
               style={{ boxShadow: '6px 6px 0px #0f172a' }}
             >
-              <div className="w-12 h-12 rounded-xl bg-slate-900 text-rose-400 flex items-center justify-center border-2 border-slate-900 shadow">
+              <div className="w-12 h-12 short:w-8 short:h-8 rounded-xl bg-slate-900 text-rose-400 flex items-center justify-center border-2 border-slate-900 shadow">
                 <Shirt className="w-6 h-6 stroke-[2.5]" />
               </div>
-              <span className="font-brand text-3xl sm:text-4xl uppercase tracking-wide leading-none">
+              <span className="font-brand text-3xl sm:text-4xl short:text-xl uppercase tracking-wide leading-none">
                 LOCKER
               </span>
             </button>
@@ -236,13 +236,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             <button
               onMouseEnter={handleHover}
               onClick={() => handleClick(onOpenSettings)}
-              className="anim-btn-3 group relative w-full py-3.5 px-6 bg-cyan-400 hover:bg-cyan-300 text-slate-950 border-4 border-slate-900 rounded-2xl -rotate-1 hover:rotate-0 hover:scale-102 transition-all active:scale-95 active:translate-y-1 active:translate-x-1 cursor-pointer flex items-center gap-4"
+              className="anim-btn-3 group relative w-full py-3.5 short:py-1.5 px-6 short:px-4 bg-cyan-400 hover:bg-cyan-300 text-slate-950 border-4 border-slate-900 rounded-2xl -rotate-1 hover:rotate-0 hover:scale-102 transition-all active:scale-95 active:translate-y-1 active:translate-x-1 cursor-pointer flex items-center gap-4"
               style={{ boxShadow: '6px 6px 0px #0f172a' }}
             >
-              <div className="w-12 h-12 rounded-xl bg-slate-900 text-cyan-400 flex items-center justify-center border-2 border-slate-900 shadow">
+              <div className="w-12 h-12 short:w-8 short:h-8 rounded-xl bg-slate-900 text-cyan-400 flex items-center justify-center border-2 border-slate-900 shadow">
                 <Settings className="w-6 h-6 stroke-[2.5]" />
               </div>
-              <span className="font-brand text-3xl sm:text-4xl uppercase tracking-wide leading-none">
+              <span className="font-brand text-3xl sm:text-4xl short:text-xl uppercase tracking-wide leading-none">
                 SETTINGS
               </span>
             </button>
@@ -251,13 +251,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             <button
               onMouseEnter={handleHover}
               onClick={() => handleClick(onOpenControls)}
-              className="anim-btn-4 group relative w-full py-3.5 px-6 bg-emerald-400 hover:bg-emerald-300 text-slate-950 border-4 border-slate-900 rounded-2xl rotate-1 hover:rotate-0 hover:scale-102 transition-all active:scale-95 active:translate-y-1 active:translate-x-1 cursor-pointer flex items-center gap-4"
+              className="anim-btn-4 group relative w-full py-3.5 short:py-1.5 px-6 short:px-4 bg-emerald-400 hover:bg-emerald-300 text-slate-950 border-4 border-slate-900 rounded-2xl rotate-1 hover:rotate-0 hover:scale-102 transition-all active:scale-95 active:translate-y-1 active:translate-x-1 cursor-pointer flex items-center gap-4"
               style={{ boxShadow: '6px 6px 0px #0f172a' }}
             >
-              <div className="w-12 h-12 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center border-2 border-slate-900 shadow">
+              <div className="w-12 h-12 short:w-8 short:h-8 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center border-2 border-slate-900 shadow">
                 <HelpCircle className="w-6 h-6 stroke-[2.5]" />
               </div>
-              <span className="font-brand text-3xl sm:text-4xl uppercase tracking-wide leading-none">
+              <span className="font-brand text-3xl sm:text-4xl short:text-xl uppercase tracking-wide leading-none">
                 HOW TO PLAY
               </span>
             </button>
@@ -266,13 +266,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
         {/* 3. PLAY SUBMENU: 3 BIG TILES (SLIDES IN FROM RIGHT WITH QUICK EASE-OUT) */}
         {isPlayModalOpen && (
-          <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="pointer-events-auto pp-overlay z-50 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-150">
             <div
-              className="anim-subscreen-in w-full max-w-4xl bg-amber-400 border-4 border-slate-900 rounded-3xl p-6 sm:p-10 relative text-slate-950"
+              className="anim-subscreen-in w-full max-w-4xl bg-amber-400 border-4 border-slate-900 rounded-3xl p-4 sm:p-10 short:p-3 relative text-slate-950"
               style={{ boxShadow: '10px 10px 0px #0f172a' }}
             >
               {/* Top Bar inside Play Modal: Title & Back Button */}
-              <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center justify-between gap-2 mb-8 short:mb-3">
                 <button
                   onMouseEnter={handleHover}
                   onClick={handleBack}
@@ -284,7 +284,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 </button>
 
                 <h2
-                  className="font-brand text-4xl sm:text-5xl uppercase tracking-wide text-slate-950 text-center"
+                  className="font-brand text-2xl sm:text-5xl short:text-2xl uppercase tracking-wide text-slate-950 text-center"
                   style={{ WebkitTextStroke: '1px #0f172a' }}
                 >
                   {playSubMenu === 'bots' ? 'PLAY VS BOTS' : 'SELECT MATCH MODE'}
@@ -295,7 +295,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
               {/* MAIN 3 TILES */}
               {playSubMenu === 'main' && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 short:gap-3">
                   {/* TILE 1: PLAY ONLINE */}
                   <button
                     onMouseEnter={handleHover}
@@ -303,21 +303,21 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                       onBackToMainMenu?.();
                       handleClick(onOpenOnline);
                     }}
-                    className="group bg-white hover:bg-slate-50 border-4 border-slate-900 rounded-3xl p-6 text-left flex flex-col justify-between transition-transform hover:-translate-y-1 active:translate-y-1 cursor-pointer"
+                    className="group bg-white hover:bg-slate-50 border-4 border-slate-900 rounded-3xl p-6 short:p-3 text-left flex flex-col justify-between transition-transform hover:-translate-y-1 active:translate-y-1 cursor-pointer"
                     style={{ boxShadow: '6px 6px 0px #0f172a' }}
                   >
-                    <div className="w-16 h-16 rounded-2xl bg-cyan-400 text-slate-950 border-4 border-slate-900 flex items-center justify-center mb-6 shadow">
+                    <div className="w-16 h-16 rounded-2xl bg-cyan-400 text-slate-950 border-4 border-slate-900 flex items-center justify-center mb-6 short:mb-2 short:w-10 short:h-10 shadow">
                       <Globe2 className="w-9 h-9 stroke-[2.5]" />
                     </div>
                     <div>
-                      <div className="font-brand text-3xl uppercase tracking-wide text-slate-950 mb-1">
+                      <div className="font-brand text-3xl short:text-lg uppercase tracking-wide text-slate-950 mb-1">
                         PLAY ONLINE
                       </div>
-                      <p className="text-sm font-bold text-slate-700 leading-snug">
+                      <p className="text-sm short:text-xs font-bold text-slate-700 leading-snug">
                         Create a room, join with party code, or play worldwide!
                       </p>
                     </div>
-                    <div className="mt-6 py-2.5 px-4 bg-cyan-400 border-3 border-slate-900 rounded-xl text-center font-black text-xs uppercase tracking-wider text-slate-950 group-hover:bg-cyan-300">
+                    <div className="mt-6 short:mt-2 py-2.5 short:py-1 px-4 bg-cyan-400 border-3 border-slate-900 rounded-xl text-center font-black text-xs uppercase tracking-wider text-slate-950 group-hover:bg-cyan-300">
                       ENTER LOBBY →
                     </div>
                   </button>
@@ -329,21 +329,21 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                       padelAudio.playClickPop();
                       setPlaySubMenu('bots');
                     }}
-                    className="group bg-white hover:bg-slate-50 border-4 border-slate-900 rounded-3xl p-6 text-left flex flex-col justify-between transition-transform hover:-translate-y-1 active:translate-y-1 cursor-pointer"
+                    className="group bg-white hover:bg-slate-50 border-4 border-slate-900 rounded-3xl p-6 short:p-3 text-left flex flex-col justify-between transition-transform hover:-translate-y-1 active:translate-y-1 cursor-pointer"
                     style={{ boxShadow: '6px 6px 0px #0f172a' }}
                   >
-                    <div className="w-16 h-16 rounded-2xl bg-rose-500 text-white border-4 border-slate-900 flex items-center justify-center mb-6 shadow">
+                    <div className="w-16 h-16 rounded-2xl bg-rose-500 text-white border-4 border-slate-900 flex items-center justify-center mb-6 short:mb-2 short:w-10 short:h-10 shadow">
                       <Users className="w-9 h-9 stroke-[2.5]" />
                     </div>
                     <div>
-                      <div className="font-brand text-3xl uppercase tracking-wide text-slate-950 mb-1">
+                      <div className="font-brand text-3xl short:text-lg uppercase tracking-wide text-slate-950 mb-1">
                         PLAY VS BOTS
                       </div>
-                      <p className="text-sm font-bold text-slate-700 leading-snug">
+                      <p className="text-sm short:text-xs font-bold text-slate-700 leading-snug">
                         Play 2v2 doubles or 1v1 singles against smart AI bots!
                       </p>
                     </div>
-                    <div className="mt-6 py-2.5 px-4 bg-rose-500 border-3 border-slate-900 rounded-xl text-center font-black text-xs uppercase tracking-wider text-white group-hover:bg-rose-400">
+                    <div className="mt-6 short:mt-2 py-2.5 short:py-1 px-4 bg-rose-500 border-3 border-slate-900 rounded-xl text-center font-black text-xs uppercase tracking-wider text-white group-hover:bg-rose-400">
                       CONFIGURE MATCH →
                     </div>
                   </button>
@@ -355,21 +355,21 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                       onBackToMainMenu?.();
                       handleClick(onStartPractice);
                     }}
-                    className="group bg-white hover:bg-slate-50 border-4 border-slate-900 rounded-3xl p-6 text-left flex flex-col justify-between transition-transform hover:-translate-y-1 active:translate-y-1 cursor-pointer"
+                    className="group bg-white hover:bg-slate-50 border-4 border-slate-900 rounded-3xl p-6 short:p-3 text-left flex flex-col justify-between transition-transform hover:-translate-y-1 active:translate-y-1 cursor-pointer"
                     style={{ boxShadow: '6px 6px 0px #0f172a' }}
                   >
-                    <div className="w-16 h-16 rounded-2xl bg-emerald-400 text-slate-950 border-4 border-slate-900 flex items-center justify-center mb-6 shadow">
+                    <div className="w-16 h-16 rounded-2xl bg-emerald-400 text-slate-950 border-4 border-slate-900 flex items-center justify-center mb-6 short:mb-2 short:w-10 short:h-10 shadow">
                       <Dumbbell className="w-9 h-9 stroke-[2.5]" />
                     </div>
                     <div>
-                      <div className="font-brand text-3xl uppercase tracking-wide text-slate-950 mb-1">
+                      <div className="font-brand text-3xl short:text-lg uppercase tracking-wide text-slate-950 mb-1">
                         PRACTICE
                       </div>
-                      <p className="text-sm font-bold text-slate-700 leading-snug">
+                      <p className="text-sm short:text-xs font-bold text-slate-700 leading-snug">
                         Solo wall rally drills and underhand serve training!
                       </p>
                     </div>
-                    <div className="mt-6 py-2.5 px-4 bg-emerald-400 border-3 border-slate-900 rounded-xl text-center font-black text-xs uppercase tracking-wider text-slate-950 group-hover:bg-emerald-300">
+                    <div className="mt-6 short:mt-2 py-2.5 short:py-1 px-4 bg-emerald-400 border-3 border-slate-900 rounded-xl text-center font-black text-xs uppercase tracking-wider text-slate-950 group-hover:bg-emerald-300">
                       START PRACTICE →
                     </div>
                   </button>
@@ -379,22 +379,22 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               {/* CONFIGURE VS BOTS SUBMENU */}
               {playSubMenu === 'bots' && (
                 <div
-                  className="bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 space-y-6"
+                  className="bg-white border-4 border-slate-900 rounded-3xl p-4 sm:p-8 short:p-3 space-y-6 short:space-y-2"
                   style={{ boxShadow: '6px 6px 0px #0f172a' }}
                 >
                   {/* 1. Format: 2v2 Doubles vs 1v1 Singles */}
                   <div>
-                    <label className="block font-brand text-xl uppercase tracking-wide mb-2 text-slate-900">
+                    <label className="block font-brand text-xl short:text-sm uppercase tracking-wide mb-2 short:mb-1 text-slate-900">
                       Match Format
                     </label>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-2 sm:gap-4">
                       <button
                         onMouseEnter={handleHover}
                         onClick={() => {
                           padelAudio.playClickPop();
                           setSelectedMode('2v2');
                         }}
-                        className={`py-3.5 px-4 rounded-2xl border-4 border-slate-900 font-brand text-xl uppercase tracking-wide transition flex items-center justify-center gap-3 cursor-pointer ${
+                        className={`py-3.5 short:py-1.5 px-4 rounded-2xl border-4 border-slate-900 font-brand text-base sm:text-xl short:text-sm uppercase tracking-wide transition flex items-center justify-center gap-3 cursor-pointer ${
                           selectedMode === '2v2'
                             ? 'bg-amber-400 text-slate-950 scale-102'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -410,7 +410,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                           padelAudio.playClickPop();
                           setSelectedMode('1v1');
                         }}
-                        className={`py-3.5 px-4 rounded-2xl border-4 border-slate-900 font-brand text-xl uppercase tracking-wide transition flex items-center justify-center gap-3 cursor-pointer ${
+                        className={`py-3.5 short:py-1.5 px-4 rounded-2xl border-4 border-slate-900 font-brand text-base sm:text-xl short:text-sm uppercase tracking-wide transition flex items-center justify-center gap-3 cursor-pointer ${
                           selectedMode === '1v1'
                             ? 'bg-amber-400 text-slate-950 scale-102'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -425,10 +425,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
                   {/* 2. Bot Difficulty */}
                   <div>
-                    <label className="block font-brand text-xl uppercase tracking-wide mb-2 text-slate-900">
+                    <label className="block font-brand text-xl short:text-sm uppercase tracking-wide mb-2 short:mb-1 text-slate-900">
                       AI Bot Difficulty
                     </label>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4">
                       {(['easy', 'medium', 'hard'] as const).map((diff) => (
                         <button
                           key={diff}
@@ -437,7 +437,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                             padelAudio.playClickPop();
                             setSelectedDifficulty(diff);
                           }}
-                          className={`py-3 px-3 rounded-2xl border-4 border-slate-900 font-brand text-lg uppercase tracking-wide transition text-center cursor-pointer ${
+                          className={`py-3 short:py-1.5 px-3 rounded-2xl border-4 border-slate-900 font-brand text-lg uppercase tracking-wide transition text-center cursor-pointer ${
                             selectedDifficulty === diff
                               ? 'bg-rose-500 text-white scale-102'
                               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -452,10 +452,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
                   {/* 3. Match Length */}
                   <div>
-                    <label className="block font-brand text-xl uppercase tracking-wide mb-2 text-slate-900">
+                    <label className="block font-brand text-xl short:text-sm uppercase tracking-wide mb-2 short:mb-1 text-slate-900">
                       Match Length
                     </label>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4">
                       {(
                         [
                           { id: '1_game', label: '1 Game (Quick)' },
@@ -470,7 +470,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                             padelAudio.playClickPop();
                             setSelectedMatchLength(len.id);
                           }}
-                          className={`py-3 px-3 rounded-2xl border-4 border-slate-900 font-brand text-base sm:text-lg uppercase tracking-wide transition text-center cursor-pointer ${
+                          className={`py-3 short:py-1.5 px-3 rounded-2xl border-4 border-slate-900 font-brand text-base sm:text-lg uppercase tracking-wide transition text-center cursor-pointer ${
                             selectedMatchLength === len.id
                               ? 'bg-cyan-400 text-slate-950 scale-102'
                               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -491,7 +491,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                         onStartMatch(selectedMode, selectedDifficulty, selectedMatchLength)
                       );
                     }}
-                    className="w-full py-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 border-4 border-slate-900 font-brand text-3xl uppercase tracking-wider transition active:translate-y-1 active:translate-x-1 flex items-center justify-center gap-3 cursor-pointer"
+                    className="w-full py-4 short:py-2 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 border-4 border-slate-900 font-brand text-3xl short:text-xl uppercase tracking-wider transition active:translate-y-1 active:translate-x-1 flex items-center justify-center gap-3 cursor-pointer"
                     style={{ boxShadow: '6px 6px 0px #0f172a' }}
                   >
                     <Play className="w-8 h-8 fill-current" />
@@ -504,7 +504,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         )}
 
         {/* 4. BOTTOM BAR: ACTIVE PLAYER BADGE ONLY (REMOVED CLUTTER PILLS) */}
-        <div className="pointer-events-auto flex items-center justify-between w-full">
+        <div className="pointer-events-auto flex items-center justify-between w-full short:hidden">
           <div
             onClick={() => handleClick(onOpenLocker)}
             className="cursor-pointer group flex items-center gap-3.5 bg-white border-4 border-slate-900 rounded-2xl py-2 px-4 transition-transform hover:-translate-y-0.5 active:translate-y-0.5"

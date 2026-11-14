@@ -11,10 +11,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist dist-server",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/game/*.test.ts"
+    "test": "tsx --test tests/*.test.ts tests/*/*.test.ts"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
     "dotenv": "^17.2.3",

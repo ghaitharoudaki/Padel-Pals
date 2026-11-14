@@ -40,19 +40,19 @@ export const MatchOverModal: React.FC<Props> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in"
+      className="pp-overlay z-50 bg-slate-950/80 backdrop-blur-sm animate-in"
       role="dialog"
       aria-modal="true"
       aria-label="Match over"
     >
       <div
-        className={`relative w-full max-w-md border-4 border-slate-900 rounded-3xl p-6 sm:p-7 text-slate-950 text-center animate-in zoom-in-95 ${
+        className={`relative w-full max-w-md border-4 border-slate-900 rounded-3xl p-6 sm:p-7 short:p-4 text-slate-950 text-center animate-in zoom-in-95 ${
           youWon ? 'bg-amber-400' : 'bg-white'
         }`}
         style={{ boxShadow: '10px 10px 0px #0f172a' }}
       >
         <div
-          className={`mx-auto w-20 h-20 rounded-2xl border-4 border-slate-900 flex items-center justify-center mb-4 ${
+          className={`mx-auto w-20 h-20 short:hidden rounded-2xl border-4 border-slate-900 flex items-center justify-center mb-4 ${
             youWon ? 'bg-white' : 'bg-slate-200'
           }`}
           style={{ boxShadow: '4px 4px 0px #0f172a' }}
@@ -63,12 +63,12 @@ export const MatchOverModal: React.FC<Props> = ({
         <h2 className="font-brand text-4xl uppercase tracking-wide leading-none mb-1">
           {youWon ? 'Victory!' : 'Defeat'}
         </h2>
-        <p className="text-sm font-black uppercase tracking-wider text-slate-700 mb-5">
+        <p className="text-sm font-black uppercase tracking-wider text-slate-700 mb-5 short:mb-3">
           {winnerName} {winnerName.includes('&') ? 'win' : 'wins'} the match
         </p>
 
         <div
-          className="p-3 bg-slate-950 text-white border-4 border-slate-900 rounded-2xl mb-6 grid grid-cols-[1fr_auto_1fr] items-center gap-2"
+          className="p-3 bg-slate-950 text-white border-4 border-slate-900 rounded-2xl mb-6 short:mb-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2"
           style={{ boxShadow: '4px 4px 0px #0f172a' }}
         >
           <div className="text-center min-w-0">
@@ -91,7 +91,7 @@ export const MatchOverModal: React.FC<Props> = ({
             <button
               autoFocus
               onClick={() => click(onRematch)}
-              className="w-full py-3.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-brand text-xl uppercase tracking-wider rounded-2xl border-4 border-slate-900 flex items-center justify-center gap-2 transition active:translate-y-0.5"
+              className="w-full py-3.5 short:py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-brand text-xl uppercase tracking-wider rounded-2xl border-4 border-slate-900 flex items-center justify-center gap-2 transition active:translate-y-0.5"
               style={{ boxShadow: '4px 4px 0px #0f172a' }}
             >
               <RotateCcw className="w-5 h-5 stroke-[3]" />
@@ -106,7 +106,7 @@ export const MatchOverModal: React.FC<Props> = ({
           {onBackToLobby && (
             <button
               onClick={() => click(onBackToLobby)}
-              className="w-full py-3 bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-brand text-lg uppercase tracking-wider rounded-2xl border-4 border-slate-900 flex items-center justify-center gap-2 transition"
+              className="w-full py-3 short:py-2 bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-brand text-lg uppercase tracking-wider rounded-2xl border-4 border-slate-900 flex items-center justify-center gap-2 transition"
               style={{ boxShadow: '4px 4px 0px #0f172a' }}
             >
               <Users className="w-5 h-5 stroke-[2.5]" />
@@ -116,7 +116,7 @@ export const MatchOverModal: React.FC<Props> = ({
 
           <button
             onClick={() => click(onExitToMenu)}
-            className="w-full py-3 bg-white hover:bg-slate-100 text-slate-950 font-brand text-lg uppercase tracking-wider rounded-2xl border-4 border-slate-900 flex items-center justify-center gap-2 transition"
+            className="w-full py-3 short:py-2 bg-white hover:bg-slate-100 text-slate-950 font-brand text-lg uppercase tracking-wider rounded-2xl border-4 border-slate-900 flex items-center justify-center gap-2 transition"
             style={{ boxShadow: '4px 4px 0px #0f172a' }}
           >
             <Home className="w-5 h-5 stroke-[2.5]" />

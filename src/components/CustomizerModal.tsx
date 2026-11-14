@@ -11,7 +11,7 @@ import {
   PlayerAppearance,
   RacketPattern,
 } from '../game/types';
-import { buildPadelAvatar, AvatarController } from '../game/avatar';
+import { buildPadelAvatar, AvatarController } from '../game/scene/avatar';
 import {
   RotateCcw,
   Sparkles,
@@ -339,7 +339,7 @@ export const CustomizerModal: React.FC<Props> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 md:p-6 select-none animate-in fade-in duration-200">
+    <div className="pp-overlay z-50 bg-black/85 backdrop-blur-md select-none animate-in fade-in duration-200">
       {/* Exact reference container: Clean bright pastel card layout */}
       <div className="relative w-full max-w-5xl h-[92vh] max-h-[820px] bg-gradient-to-b from-[#eef2f9] to-[#dfe7f3] text-zinc-900 rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-white/60 animate-in slide-in-from-right-10 duration-250 ease-out">
         
@@ -352,7 +352,7 @@ export const CustomizerModal: React.FC<Props> = ({
         </div>
 
         {/* TOP BAR (Matches Reference Header) */}
-        <div className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-black/5 bg-white/40 backdrop-blur-sm">
+        <div className="relative z-10 flex items-center justify-between gap-2 px-4 sm:px-6 py-4 short:py-2 border-b border-black/5 bg-white/40 backdrop-blur-sm">
           {/* Brand Title: "locker" lowercase */}
           <div className="flex items-center gap-2">
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-900">locker</h1>
@@ -360,7 +360,7 @@ export const CustomizerModal: React.FC<Props> = ({
 
           {/* Center Pill: "showing: captain uniform" */}
           <div className="flex items-center gap-2.5">
-            <div className="px-4 py-1.5 rounded-full bg-white shadow-sm border border-black/10 flex items-center gap-2 text-xs sm:text-sm font-bold text-blue-600">
+            <div className="hidden sm:flex px-4 py-1.5 rounded-full bg-white shadow-sm border border-black/10 items-center gap-2 text-xs sm:text-sm font-bold text-blue-600">
               <User className="w-4 h-4 text-blue-500 fill-current" />
               <span>showing: {appearance.jerseyStyle} uniform</span>
             </div>
@@ -390,10 +390,10 @@ export const CustomizerModal: React.FC<Props> = ({
         </div>
 
         {/* MAIN BODY: Split between 3D Preview (Left/Center) and Customizer Tabs (Right) */}
-        <div className="relative z-10 flex-1 flex flex-col md:flex-row overflow-hidden">
+        <div className="relative z-10 flex-1 min-h-0 flex flex-col md:flex-row short:flex-row overflow-hidden">
           
           {/* 3D Character Turntable Preview Stage */}
-          <div className="relative flex-1 flex items-center justify-center overflow-hidden min-h-[300px]">
+          <div className="relative flex-1 flex items-center justify-center overflow-hidden min-h-[240px] short:min-h-0">
             <div
               ref={mountRef}
               className="w-full h-full cursor-grab active:cursor-grabbing flex items-center justify-center"
@@ -406,7 +406,7 @@ export const CustomizerModal: React.FC<Props> = ({
           </div>
 
           {/* RIGHT SIDE: CUSTOMIZER OPTIONS PANEL */}
-          <div className="w-full md:w-96 bg-white/85 backdrop-blur-md border-t md:border-t-0 md:border-l border-black/10 flex flex-col overflow-hidden shadow-lg">
+          <div className="w-full md:w-96 short:w-[55%] short:max-w-96 min-h-0 bg-white/85 backdrop-blur-md border-t md:border-t-0 md:border-l short:border-t-0 short:border-l border-black/10 flex flex-col overflow-hidden shadow-lg">
             
             {/* Category Navigation Tabs */}
             <div className="flex border-b border-black/10 bg-zinc-100/70 p-1.5 gap-1">
@@ -829,7 +829,7 @@ export const CustomizerModal: React.FC<Props> = ({
         </div>
 
         {/* BOTTOM CONTROLS BAR (Matches Reference Image exactly: undo, randomize, reset) */}
-        <div className="relative z-10 flex items-center justify-between px-6 py-3.5 border-t border-black/5 bg-white/40 backdrop-blur-sm">
+        <div className="relative z-10 flex items-center justify-between px-4 sm:px-6 py-3.5 short:py-1.5 border-t border-black/5 bg-white/40 backdrop-blur-sm">
           <div className="flex items-center gap-2">
             {/* "undo" button */}
             <button

@@ -6,8 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
-.aistudio/
-.impeccable/
 *.png
 !public/assets/**/*.png
 dist-server/

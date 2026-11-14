@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScoreState, ShotType, GameMode, Side } from '../game/types';
-import { describeMatchFormat } from '../game/rules';
+import { describeMatchFormat } from '../game/engine/rules';
 import { Volume2, VolumeX, HelpCircle, LogOut, Pause, Zap, WifiOff } from 'lucide-react';
 import { padelAudio } from '../game/audio';
 
@@ -45,7 +45,7 @@ const CHUNKY = { boxShadow: '3px 3px 0px #0f172a' };
 
 /** True on touch-first devices (phones/tablets), regardless of screen width. */
 function useCoarsePointer(): boolean {
-  const query = '(pointer: coarse)';
+  const query = '(pointer: coarse), (any-pointer: coarse) and (hover: none)';
   const [coarse, setCoarse] = React.useState(() =>
     typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : false
   );
@@ -57,6 +57,22 @@ function useCoarsePointer(): boolean {
     return () => mql.removeEventListener?.('change', onChange);
   }, []);
   return coarse;
+}
+
+/** Phone held upright (narrow portrait screen). */
+function usePortraitPhone(): boolean {
+  const query = '(orientation: portrait) and (max-width: 600px)';
+  const [match, setMatch] = React.useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : false
+  );
+  React.useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatch(mql.matches);
+    mql.addEventListener?.('change', onChange);
+    return () => mql.removeEventListener?.('change', onChange);
+  }, []);
+  return match;
 }
 
 export const GameHUD: React.FC<Props> = ({
@@ -126,6 +142,12 @@ export const GameHUD: React.FC<Props> = ({
   };
 
   const formatLabel = describeMatchFormat(score);
+  const isPortraitPhone = usePortraitPhone();
+  const [showRotateTip, setShowRotateTip] = React.useState(true);
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setShowRotateTip(false), 6000);
+    return () => window.clearTimeout(timer);
+  }, []);
   const youSouth = localSide === 'south';
 
   const teamBlock = (side: Side) => {
@@ -136,12 +158,12 @@ export const GameHUD: React.FC<Props> = ({
     const serving = score.servingSide === side;
     return (
       <div
-        className={`flex items-center gap-2 px-2 sm:px-3 py-1 rounded-xl border-2 border-slate-900 ${
+        className={`flex items-center gap-1.5 lg:gap-2 px-2 lg:px-3 py-1 rounded-xl border-2 border-slate-900 ${
           isSouth ? 'bg-blue-600 flex-row' : 'bg-rose-600 flex-row-reverse'
         }`}
       >
         <div className={`flex flex-col ${isSouth ? 'items-start' : 'items-end'} min-w-0`}>
-          <span className="font-brand text-xs sm:text-sm uppercase tracking-wide truncate max-w-[84px] sm:max-w-[150px] leading-tight">
+          <span className="font-brand text-xs sm:text-sm uppercase tracking-wide truncate max-w-[64px] sm:max-w-[56px] md:max-w-[64px] lg:max-w-[150px] leading-tight">
             {name}
           </span>
           <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-white/80 leading-none mt-0.5">
@@ -170,9 +192,9 @@ export const GameHUD: React.FC<Props> = ({
   return (
     <div className="fixed inset-0 z-30 pointer-events-none select-none font-sans overflow-hidden">
       {/* TOP BAR */}
-      <div className="flex items-start justify-between gap-2 p-2 sm:p-4 w-full">
+      <div className="safe-top grid grid-cols-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 p-2 sm:p-4 w-full">
         {/* Left: menu, pause, online status */}
-        <div className="pointer-events-auto flex flex-wrap items-center gap-2 max-w-[34%]">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-2 justify-self-start max-sm:row-start-2">
           <button
             onMouseEnter={() => padelAudio.playHoverTick()}
             onClick={() => {
@@ -192,7 +214,7 @@ export const GameHUD: React.FC<Props> = ({
               padelAudio.playBackWhoosh();
               onExitToMenu();
             }}
-            className="hidden sm:flex h-10 px-3 bg-white hover:bg-slate-100 text-slate-950 border-3 border-slate-900 rounded-xl font-brand text-sm uppercase tracking-wide items-center gap-2 transition active:scale-95"
+            className="hidden md:flex h-10 px-3 bg-white hover:bg-slate-100 text-slate-950 border-3 border-slate-900 rounded-xl font-brand text-sm uppercase tracking-wide items-center gap-2 transition active:scale-95"
             style={CHUNKY}
             title={isOnline ? 'Leave the online match' : 'Quit to main menu'}
           >
@@ -234,9 +256,9 @@ export const GameHUD: React.FC<Props> = ({
         </div>
 
         {/* Center: scoreboard */}
-        <div className="pointer-events-auto flex flex-col items-center min-w-0">
+        <div className="pointer-events-auto flex flex-col items-center min-w-0 justify-self-center max-sm:col-span-2 max-sm:row-start-1">
           <div
-            className="bg-slate-950 border-4 border-slate-900 rounded-2xl p-1 sm:p-1.5 flex items-center gap-1.5 sm:gap-3 text-white"
+            className="bg-slate-950 border-4 border-slate-900 rounded-2xl p-1 lg:p-1.5 flex items-center gap-1.5 lg:gap-3 text-white"
             style={{ boxShadow: '4px 4px 0px #0f172a' }}
           >
             {teamBlock(youSouth ? 'south' : 'north')}
@@ -278,7 +300,7 @@ export const GameHUD: React.FC<Props> = ({
         </div>
 
         {/* Right: sound + help */}
-        <div className="pointer-events-auto flex items-center gap-2 max-w-[34%] justify-end">
+        <div className="pointer-events-auto flex items-center gap-2 justify-self-end max-sm:row-start-2">
           <button
             onMouseEnter={() => padelAudio.playHoverTick()}
             onClick={onToggleAudio}
@@ -309,9 +331,21 @@ export const GameHUD: React.FC<Props> = ({
         </div>
       </div>
 
+      {isTouch && isPortraitPhone && showRotateTip && (
+        <div className="fixed left-1/2 -translate-x-1/2 top-[45%] pointer-events-auto animate-slide-up">
+          <button
+            onClick={() => setShowRotateTip(false)}
+            className="bg-slate-950/90 text-white border-3 border-slate-900 rounded-2xl px-4 py-2 text-xs font-black uppercase tracking-wide flex items-center gap-2"
+            style={CHUNKY}
+          >
+            <span className="text-lg">📱↻</span> Rotate for a wider view
+          </button>
+        </div>
+      )}
+
       {/* SERVE PROMPT */}
       {isMyServe && !pointBanner && (
-        <div className="fixed left-1/2 -translate-x-1/2 bottom-28 sm:bottom-24 pointer-events-none">
+        <div className={`fixed left-1/2 -translate-x-1/2 pointer-events-none ${isTouch ? 'top-32 sm:top-24 short:top-20' : 'bottom-24'}`}>
           <div
             className="animate-serve-pulse bg-amber-400 text-slate-950 border-4 border-slate-900 rounded-2xl px-4 py-2 font-brand uppercase tracking-wide text-center"
             style={{ boxShadow: '4px 4px 0px #0f172a' }}
@@ -325,16 +359,23 @@ export const GameHUD: React.FC<Props> = ({
       )}
 
       {/* BOTTOM-LEFT: shot & power, joystick on touch */}
-      <div className="fixed bottom-3 left-3 sm:bottom-4 sm:left-4 pointer-events-auto flex flex-col gap-3 items-start">
+      <div className="fixed safe-bl pointer-events-auto flex flex-col gap-3 short:gap-2 items-start">
         <div
-          className="bg-white border-4 border-slate-900 rounded-2xl p-2 flex flex-col gap-1.5 text-slate-950 min-w-[150px]"
-          style={{ boxShadow: '4px 4px 0px #0f172a' }}
+          className={`bg-white border-4 border-slate-900 rounded-2xl text-slate-950 ${
+            isTouch ? 'p-1 flex flex-row items-center gap-1.5 w-[150px]' : 'p-2 flex flex-col gap-1.5 min-w-[150px]'
+          }`}
+          style={{ boxShadow: isTouch ? '3px 3px 0px #0f172a' : '4px 4px 0px #0f172a' }}
         >
-          <div className={`px-2.5 py-1 rounded-xl border-2 border-slate-900 font-brand text-sm uppercase flex items-center gap-2 ${shot.bg}`}>
+          <div
+            className={`${isTouch ? 'hidden' : 'flex'} px-2.5 py-1 rounded-xl border-2 border-slate-900 font-brand text-sm uppercase items-center gap-2 ${shot.bg}`}
+          >
             <span className="text-base">{shot.icon}</span>
             <span className="leading-none">{shot.label}</span>
           </div>
-          <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border-2 border-slate-900" title="Shot power">
+          <div
+            className={`flex items-center gap-2 bg-slate-100 rounded-xl border-2 border-slate-900 ${isTouch ? 'p-1 flex-1' : 'p-1.5'}`}
+            title="Shot power"
+          >
             <Zap className="w-3.5 h-3.5 text-amber-500 fill-current" />
             <div className="flex-1 h-3 bg-slate-300 rounded-lg overflow-hidden border border-slate-400">
               <div
@@ -353,7 +394,7 @@ export const GameHUD: React.FC<Props> = ({
             onPointerMove={stickActive ? handleStickMove : undefined}
             onPointerUp={handlePointerUpStick}
             onPointerCancel={handlePointerUpStick}
-            className="w-28 h-28 rounded-full bg-slate-900/60 backdrop-blur-sm border-4 border-slate-900 relative flex items-center justify-center touch-none select-none"
+            className="w-28 h-28 short:w-24 short:h-24 rounded-full bg-slate-900/60 backdrop-blur-sm border-4 border-slate-900 relative flex items-center justify-center touch-none select-none"
             style={CHUNKY}
             aria-label="Movement joystick"
           >
@@ -370,16 +411,16 @@ export const GameHUD: React.FC<Props> = ({
       </div>
 
       {/* BOTTOM-RIGHT: touch buttons or desktop key hints */}
-      <div className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 pointer-events-auto flex flex-col items-end gap-3">
+      <div className="fixed safe-br pointer-events-auto flex flex-col items-end gap-3">
         {isTouch ? (
           <div className="flex items-end gap-2.5">
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2.5 short:gap-2">
               <button
                 onPointerDown={(e) => {
                   e.preventDefault();
                   onTouchJump?.();
                 }}
-                className="w-14 h-14 rounded-2xl bg-rose-500 active:bg-rose-600 text-white border-4 border-slate-900 font-brand text-xs uppercase flex flex-col items-center justify-center leading-none transition active:scale-90"
+                className="w-14 h-14 short:w-12 short:h-12 rounded-2xl bg-rose-500 active:bg-rose-600 text-white border-4 border-slate-900 font-brand text-xs uppercase flex flex-col items-center justify-center leading-none transition active:scale-90"
                 style={CHUNKY}
                 aria-label="Jump for a smash"
               >
@@ -391,7 +432,7 @@ export const GameHUD: React.FC<Props> = ({
                   e.preventDefault();
                   onTouchLob?.();
                 }}
-                className="w-14 h-14 rounded-2xl bg-indigo-500 active:bg-indigo-600 text-white border-4 border-slate-900 font-brand text-xs uppercase flex flex-col items-center justify-center leading-none transition active:scale-90"
+                className="w-14 h-14 short:w-12 short:h-12 rounded-2xl bg-indigo-500 active:bg-indigo-600 text-white border-4 border-slate-900 font-brand text-xs uppercase flex flex-col items-center justify-center leading-none transition active:scale-90"
                 style={CHUNKY}
                 aria-label="Lob"
               >
@@ -413,7 +454,7 @@ export const GameHUD: React.FC<Props> = ({
                 e.preventDefault();
                 onTouchHitEnd?.();
               }}
-              className="w-24 h-24 rounded-3xl bg-amber-400 active:bg-amber-500 text-slate-950 border-4 border-slate-900 font-brand text-xl uppercase flex flex-col items-center justify-center leading-none transition active:scale-95 touch-none"
+              className="w-24 h-24 short:w-20 short:h-20 rounded-3xl bg-amber-400 active:bg-amber-500 text-slate-950 border-4 border-slate-900 font-brand text-xl uppercase flex flex-col items-center justify-center leading-none transition active:scale-95 touch-none"
               style={{ boxShadow: '4px 4px 0px #0f172a' }}
               aria-label="Hit (hold to charge)"
             >

@@ -1,0 +1,11 @@
+{
+  "name": "Padel Pals",
+  "short_name": "Padel Pals",
+  "description": "Arcade 3D padel with friends online or against bots.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

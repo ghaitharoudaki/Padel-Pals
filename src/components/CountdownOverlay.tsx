@@ -63,7 +63,7 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
   return (
     <div className="absolute inset-0 z-50 pointer-events-none flex flex-col items-center justify-center select-none font-sans bg-slate-950/20">
       {/* Versus Banner Header */}
-      <div className="mb-6 px-4 flex flex-col sm:flex-row items-center gap-3 sm:gap-4 animate-in zoom-in-95 text-center">
+      <div className="mb-6 short:mb-2 px-4 flex flex-col sm:flex-row items-center gap-3 sm:gap-4 animate-in zoom-in-95 text-center">
         <span
           className="bg-blue-600 text-white font-brand text-2xl sm:text-3xl px-5 py-2 rounded-2xl border-4 border-slate-900 -rotate-2"
           style={{ boxShadow: '4px 4px 0px #0f172a' }}
@@ -89,7 +89,7 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
       {/* Big Animated Countdown Number */}
       <div
         key={text}
-        className="animate-countdown-pop font-brand text-8xl sm:text-9xl text-amber-400 select-none tracking-wider uppercase leading-none drop-shadow-2xl"
+        className="animate-countdown-pop font-brand text-8xl sm:text-9xl short:text-6xl text-amber-400 select-none tracking-wider uppercase leading-none drop-shadow-2xl"
         style={{
           WebkitTextStroke: '6px #0f172a',
           filter: 'drop-shadow(8px 8px 0px #0f172a)',
