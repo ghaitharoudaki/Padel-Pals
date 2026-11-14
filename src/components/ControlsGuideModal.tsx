@@ -50,19 +50,19 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <span>Easy Directional Aiming (3x2 Grid)</span>
             </div>
             <p className="text-xs font-bold text-slate-700 leading-relaxed">
-              No tricky mouse aiming needed! Simply hold your movement keys or joystick in the direction you want the ball to go. Watch the yellow target reticle snap across the opponent&apos;s court:
+              Move with WASD / arrows (Shift to sprint). The direction you hold when you hit picks the target, shown by the yellow reticle on the opponent&apos;s court:
             </p>
             <div className="grid grid-cols-3 gap-1.5 text-center text-xs pt-1 font-brand">
               <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
-                <span className="text-indigo-600 block text-xs">W + A</span>
+                <span className="text-indigo-600 block text-xs">S + A</span>
                 <span className="text-[10px] text-slate-600 font-sans font-bold">Short Left</span>
               </div>
               <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
-                <span className="text-indigo-600 block text-xs">W / Up</span>
+                <span className="text-indigo-600 block text-xs">S / Down</span>
                 <span className="text-[10px] text-slate-600 font-sans font-bold">Short Center</span>
               </div>
               <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
-                <span className="text-indigo-600 block text-xs">W + D</span>
+                <span className="text-indigo-600 block text-xs">S + D</span>
                 <span className="text-[10px] text-slate-600 font-sans font-bold">Short Right</span>
               </div>
               <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
@@ -88,20 +88,20 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-slate-950 block">SPACE / CLICK</span>
-                <span className="text-[11px] font-bold text-slate-600">Hold to charge power, release to strike</span>
+                <span className="font-brand text-sm text-slate-950 block">SPACE / LEFT CLICK</span>
+                <span className="text-[11px] font-bold text-slate-600">Hold to charge, release to hit. Also serves.</span>
               </div>
               <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-indigo-600 block">SHIFT + HIT (LOB)</span>
+                <span className="font-brand text-sm text-indigo-600 block">HOLD Q + HIT (LOB)</span>
                 <span className="text-[11px] font-bold text-slate-600">High arc defensive lob over opponents</span>
               </div>
               <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-pink-600 block">CTRL + HIT (DROP)</span>
+                <span className="font-brand text-sm text-pink-600 block">HOLD F + HIT (DROP)</span>
                 <span className="text-[11px] font-bold text-slate-600">Soft drop shot that dies close to the net</span>
               </div>
               <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-rose-600 block">SMASH (OVERHEAD)</span>
-                <span className="text-[11px] font-bold text-slate-600">Jump and hit when ball is above head height</span>
+                <span className="font-brand text-sm text-rose-600 block">E JUMP / RIGHT CLICK (SMASH)</span>
+                <span className="text-[11px] font-bold text-slate-600">Smash any ball above head height</span>
               </div>
             </div>
           </div>
@@ -113,7 +113,7 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <span>Mobile / Touch Controls</span>
             </div>
             <p className="text-xs font-bold text-slate-700 leading-relaxed">
-              On touch devices, use the floating on-screen joystick on the left to move and select your 3x2 aim zone. Tap or hold the chunky &quot;HIT&quot; button to charge your drive, or press &quot;LOB&quot; for an instant lob shot!
+              Use the joystick on the left to move and aim. Hold &quot;HIT&quot; to charge and release to strike, tap &quot;LOB&quot; for a lob and &quot;JUMP&quot; for a smash. Pause anytime with the pause button (Esc or P on keyboard).
             </p>
           </div>
 
@@ -124,7 +124,7 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <span className="font-brand text-sm uppercase text-slate-950 block mb-0.5">
                 Smart Aim Assist &amp; Glass Wall Rule:
               </span>
-              Aim Assist automatically adjusts elevation to clear the net and keeps normal shots within court boundaries. The ball must bounce once on the floor before hitting the glass wall!
+              Aim Assist automatically adjusts elevation to clear the net and keeps normal shots within court boundaries. The ball must bounce once on the floor before hitting the glass. Let the serve bounce before returning it, and your team can only hit the ball once per rally exchange.
             </div>
           </div>
 

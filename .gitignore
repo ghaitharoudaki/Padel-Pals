@@ -10,3 +10,4 @@ coverage/
 .impeccable/
 *.png
 !public/assets/**/*.png
+dist-server/
