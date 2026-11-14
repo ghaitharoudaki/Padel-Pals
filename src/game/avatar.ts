@@ -1183,8 +1183,8 @@ export function buildPadelAvatar(
     }
 
     // Squash & stretch recovery
-    squashScaleY = THREE.MathUtils.lerp(squashScaleY, 1.0, dt * 12.0);
-    squashScaleXZ = THREE.MathUtils.lerp(squashScaleXZ, 1.0, dt * 12.0);
+    squashScaleY = THREE.MathUtils.lerp(squashScaleY, 1.0, Math.min(1, dt * 12.0));
+    squashScaleXZ = THREE.MathUtils.lerp(squashScaleXZ, 1.0, Math.min(1, dt * 12.0));
     pelvisGroup.scale.set(squashScaleXZ, squashScaleY, squashScaleXZ);
 
     // State Animations (Celebrate / Sad)

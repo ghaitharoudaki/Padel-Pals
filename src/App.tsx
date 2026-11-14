@@ -1699,6 +1699,24 @@ export default function App() {
       renderer
     );
 
+    // ?debug=1 exposes live state for automated QA / troubleshooting.
+    if (new URLSearchParams(window.location.search).get('debug') === '1') {
+      (window as any).__padelDebug = {
+        players: () =>
+          [p1Ref.current, p2Ref.current, p3Ref.current, p4Ref.current].map((p) => ({
+            id: p.id,
+            pos: { ...p.position },
+            zone: p.zone,
+            serving: p.isServing,
+            avatar: avatars[p.id].group.position.toArray(),
+            scale: avatars[p.id].group.scale.toArray(),
+          })),
+        ball: () => ({ ...ballRef.current.position, inPlay: ballRef.current.inPlay }),
+        camera: () => cameraController.camera.position.toArray(),
+        screen: () => screenStateRef.current,
+      };
+    }
+
     gameLoop.keepAliveWhenHidden = () => isOnlineHost() && !isMenuScreen(screenStateRef.current);
     gameLoop.start();
 
@@ -1987,6 +2005,8 @@ export default function App() {
       setIsMatchTransitioning(true);
       cameraControllerRef.current?.startPlayPushIn(() => {
         cameraControllerRef.current?.snapToMatchPreset();
+        // The menu pose overrides the local player during the push-in; place everyone again.
+        ballRef.current = arrangeServe(roster(), scoreRef.current, !isSinglesMode(mode));
         changeScreen('COUNTDOWN');
         setIsMatchTransitioning(false);
         isStartingMatchRef.current = false;
