@@ -1676,6 +1676,7 @@ export default function App() {
         pixelRatio: () => renderer.getPixelRatio(),
         fov: () => cameraController.camera.fov,
         screen: () => screenStateRef.current,
+        score: () => ({ points: [...scoreRef.current.points], games: [...scoreRef.current.games], rally: scoreRef.current.rallyCount }),
       };
     }
 
