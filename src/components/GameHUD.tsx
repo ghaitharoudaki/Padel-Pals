@@ -158,12 +158,12 @@ export const GameHUD: React.FC<Props> = ({
     const serving = score.servingSide === side;
     return (
       <div
-        className={`flex items-center gap-2 px-2 sm:px-3 py-1 rounded-xl border-2 border-slate-900 ${
+        className={`flex items-center gap-1.5 lg:gap-2 px-2 lg:px-3 py-1 rounded-xl border-2 border-slate-900 ${
           isSouth ? 'bg-blue-600 flex-row' : 'bg-rose-600 flex-row-reverse'
         }`}
       >
         <div className={`flex flex-col ${isSouth ? 'items-start' : 'items-end'} min-w-0`}>
-          <span className="font-brand text-xs sm:text-sm uppercase tracking-wide truncate max-w-[64px] sm:max-w-[150px] leading-tight">
+          <span className="font-brand text-xs sm:text-sm uppercase tracking-wide truncate max-w-[64px] sm:max-w-[56px] md:max-w-[64px] lg:max-w-[150px] leading-tight">
             {name}
           </span>
           <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-white/80 leading-none mt-0.5">
@@ -192,7 +192,7 @@ export const GameHUD: React.FC<Props> = ({
   return (
     <div className="fixed inset-0 z-30 pointer-events-none select-none font-sans overflow-hidden">
       {/* TOP BAR */}
-      <div className="safe-top grid grid-cols-2 sm:grid-cols-[1fr_auto_1fr] items-start gap-2 p-2 sm:p-4 w-full">
+      <div className="safe-top grid grid-cols-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 p-2 sm:p-4 w-full">
         {/* Left: menu, pause, online status */}
         <div className="pointer-events-auto flex flex-wrap items-center gap-2 justify-self-start max-sm:row-start-2">
           <button
@@ -214,7 +214,7 @@ export const GameHUD: React.FC<Props> = ({
               padelAudio.playBackWhoosh();
               onExitToMenu();
             }}
-            className="hidden sm:flex h-10 px-3 bg-white hover:bg-slate-100 text-slate-950 border-3 border-slate-900 rounded-xl font-brand text-sm uppercase tracking-wide items-center gap-2 transition active:scale-95"
+            className="hidden md:flex h-10 px-3 bg-white hover:bg-slate-100 text-slate-950 border-3 border-slate-900 rounded-xl font-brand text-sm uppercase tracking-wide items-center gap-2 transition active:scale-95"
             style={CHUNKY}
             title={isOnline ? 'Leave the online match' : 'Quit to main menu'}
           >
@@ -258,7 +258,7 @@ export const GameHUD: React.FC<Props> = ({
         {/* Center: scoreboard */}
         <div className="pointer-events-auto flex flex-col items-center min-w-0 justify-self-center max-sm:col-span-2 max-sm:row-start-1">
           <div
-            className="bg-slate-950 border-4 border-slate-900 rounded-2xl p-1 sm:p-1.5 flex items-center gap-1.5 sm:gap-3 text-white"
+            className="bg-slate-950 border-4 border-slate-900 rounded-2xl p-1 lg:p-1.5 flex items-center gap-1.5 lg:gap-3 text-white"
             style={{ boxShadow: '4px 4px 0px #0f172a' }}
           >
             {teamBlock(youSouth ? 'south' : 'north')}
