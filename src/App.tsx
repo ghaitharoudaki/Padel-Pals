@@ -75,6 +75,12 @@ import { MainMenu } from './components/MainMenu';
 import { CountdownOverlay } from './components/CountdownOverlay';
 import { PauseOverlay } from './components/PauseOverlay';
 import { SettingsModal } from './components/SettingsModal';
+import {
+  TouchControlSize,
+  loadTouchControlSize,
+  saveTouchControlSize,
+  touchControlScale,
+} from './components/touchControlSize';
 
 const isSinglesMode = (mode: GameMode): boolean => mode === '1v1' || mode === 'online-1v1';
 const isOnlineMode = (mode: GameMode): boolean =>
@@ -199,6 +205,15 @@ export default function App() {
   const [isMyServe, setIsMyServe] = useState(false);
   const [showControlsOverlay, setShowControlsOverlay] = useState(false);
   const [localSide, setLocalSide] = useState<Side>('south');
+  const [touchControlSize, setTouchControlSize] = useState<TouchControlSize>(() => loadTouchControlSize());
+  const isTouchDevice =
+    typeof window !== 'undefined' &&
+    ((typeof window.matchMedia === 'function' && window.matchMedia('(any-pointer: coarse)').matches) ||
+      (navigator.maxTouchPoints || 0) > 0);
+  const handleTouchControlSize = (size: TouchControlSize) => {
+    setTouchControlSize(size);
+    saveTouchControlSize(size);
+  };
   const aimAssistRef = useRef<AimAssist>(aimAssist);
   const inputManagerRef = useRef<InputManager | null>(null);
 
@@ -2165,6 +2180,8 @@ export default function App() {
           onToggleGoldenPoint={() => setGoldenPoint((prev) => !prev)}
           aimAssist={aimAssist}
           onSelectAimAssist={setAimAssist}
+          touchControlSize={touchControlSize}
+          onSelectTouchControlSize={isTouchDevice ? handleTouchControlSize : undefined}
         />
       )}
 
@@ -2213,6 +2230,7 @@ export default function App() {
           onTouchHitStart={() => inputManagerRef.current?.startTouchCharge()}
           onTouchHitEnd={() => inputManagerRef.current?.releaseTouchCharge()}
           onTouchLob={() => inputManagerRef.current?.triggerTouchLob()}
+          touchScale={touchControlScale(touchControlSize)}
           onTouchJump={() => {
             const slot = isOnline && !isHost ? mySlot : 1;
             const local = slot === 1 ? p1Ref.current : slot === 2 ? p2Ref.current : slot === 3 ? p3Ref.current : p4Ref.current;
@@ -2233,6 +2251,8 @@ export default function App() {
           onQuitToMenu={quitToMenu}
           isOnline={isOnline}
           isHost={isHost}
+          touchControlSize={isTouchDevice ? touchControlSize : undefined}
+          onSelectTouchControlSize={isTouchDevice ? handleTouchControlSize : undefined}
         />
       )}
 

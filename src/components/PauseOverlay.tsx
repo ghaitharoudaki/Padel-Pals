@@ -1,6 +1,8 @@
 import React from 'react';
 import { Play, RotateCcw, Home, Gamepad2 } from 'lucide-react';
 import { padelAudio } from '../game/audio';
+import { TouchControlSizePicker } from './TouchControlSizePicker';
+import { TouchControlSize } from './touchControlSize';
 
 interface PauseOverlayProps {
   onResume: () => void;
@@ -9,6 +11,9 @@ interface PauseOverlayProps {
   onQuitToMenu: () => void;
   isOnline?: boolean;
   isHost?: boolean;
+  /** Shown on touch devices so control size can be changed mid-match. */
+  touchControlSize?: TouchControlSize;
+  onSelectTouchControlSize?: (size: TouchControlSize) => void;
 }
 
 export const PauseOverlay: React.FC<PauseOverlayProps> = ({
@@ -18,6 +23,8 @@ export const PauseOverlay: React.FC<PauseOverlayProps> = ({
   onQuitToMenu,
   isOnline = false,
   isHost = false,
+  touchControlSize,
+  onSelectTouchControlSize,
 }) => {
   const [confirmQuit, setConfirmQuit] = React.useState(false);
   const handleHover = () => padelAudio.playHoverTick();
@@ -74,6 +81,10 @@ export const PauseOverlay: React.FC<PauseOverlayProps> = ({
                 <RotateCcw className="w-6 h-6 stroke-[3]" />
                 RESTART MATCH
               </button>
+            )}
+
+            {touchControlSize && onSelectTouchControlSize && (
+              <TouchControlSizePicker compact value={touchControlSize} onChange={onSelectTouchControlSize} />
             )}
 
             {onShowControls && (

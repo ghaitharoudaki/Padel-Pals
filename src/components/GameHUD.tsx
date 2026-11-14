@@ -29,6 +29,8 @@ interface Props {
   onTouchHitEnd?: () => void;
   onTouchLob?: () => void;
   onTouchJump?: () => void;
+  /** Multiplier for on-screen touch control size (1 = normal). */
+  touchScale?: number;
 }
 
 const SHOT_INFO: Record<ShotType, { label: string; icon: string; bg: string }> = {
@@ -57,6 +59,39 @@ function useCoarsePointer(): boolean {
     return () => mql.removeEventListener?.('change', onChange);
   }, []);
   return coarse;
+}
+
+/**
+ * Largest touch-control scale (up to the requested one) at which the left cluster
+ * (power bar + joystick) and right cluster (JUMP/LOB + HIT) still fit side by side and
+ * below the scoreboard on the current screen.
+ */
+const TOUCH_CLUSTERS_BASE_WIDTH = 112 + 162; // joystick + JUMP/LOB/HIT cluster share the bottom row, unscaled px
+const JOYSTICK_BASE = 112; // joystick diameter at scale 1
+const BUTTON_CLUSTER_BASE_HEIGHT = 122; // JUMP + LOB column at scale 1
+const TOP_RESERVED = 110; // scoreboard / top bar
+const POWER_BAR_HEIGHT = 56; // stays unscaled above the joystick
+function useFittedTouchScale(requested: number): number {
+  const compute = () => {
+    if (typeof window === 'undefined') return requested;
+    const byWidth = (window.innerWidth - 40) / TOUCH_CLUSTERS_BASE_WIDTH;
+    const byJoystickHeight = (window.innerHeight - TOP_RESERVED - POWER_BAR_HEIGHT) / JOYSTICK_BASE;
+    const byButtonsHeight = (window.innerHeight - TOP_RESERVED) / BUTTON_CLUSTER_BASE_HEIGHT;
+    return Math.max(1, Math.min(requested, byWidth, byJoystickHeight, byButtonsHeight));
+  };
+  const [scale, setScale] = React.useState(compute);
+  React.useEffect(() => {
+    const update = () => setScale(compute());
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested]);
+  return scale;
 }
 
 /** Phone held upright (narrow portrait screen). */
@@ -100,8 +135,10 @@ export const GameHUD: React.FC<Props> = ({
   onTouchHitEnd,
   onTouchLob,
   onTouchJump,
+  touchScale = 1,
 }) => {
   const shot = SHOT_INFO[currentShot] || SHOT_INFO.flat;
+  const appliedTouchScale = useFittedTouchScale(touchScale);
   const isOnline = gameMode.startsWith('online');
   const isTouch = useCoarsePointer();
   const [stickActive, setStickActive] = React.useState(false);
@@ -116,13 +153,14 @@ export const GameHUD: React.FC<Props> = ({
     const rect = stickBaseRef.current.getBoundingClientRect();
     const rawDx = e.clientX - (rect.left + rect.width / 2);
     const rawDy = e.clientY - (rect.top + rect.height / 2);
-    const maxRadius = 42;
+    // Knob travel grows with the chosen control size.
+    const maxRadius = 42 * appliedTouchScale;
     const dist = Math.min(Math.hypot(rawDx, rawDy), maxRadius);
     const angle = Math.atan2(rawDy, rawDx);
-    const offsetX = Math.cos(angle) * dist;
-    const offsetY = Math.sin(angle) * dist;
-    setStickOffset({ x: offsetX, y: offsetY });
-    onTouchJoystick?.(offsetX / maxRadius, offsetY / maxRadius);
+    const normX = (Math.cos(angle) * dist) / maxRadius;
+    const normY = (Math.sin(angle) * dist) / maxRadius;
+    setStickOffset({ x: normX * maxRadius, y: normY * maxRadius });
+    onTouchJoystick?.(normX, normY);
   };
 
   const handlePointerDownStick = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -359,7 +397,9 @@ export const GameHUD: React.FC<Props> = ({
       )}
 
       {/* BOTTOM-LEFT: shot & power, joystick on touch */}
-      <div className="fixed safe-bl pointer-events-auto flex flex-col gap-3 short:gap-2 items-start">
+      <div
+        className="fixed safe-bl pointer-events-auto flex flex-col gap-3 short:gap-2 items-start"
+      >
         <div
           className={`bg-white border-4 border-slate-900 rounded-2xl text-slate-950 ${
             isTouch ? 'p-1 flex flex-row items-center gap-1.5 w-[150px]' : 'p-2 flex flex-col gap-1.5 min-w-[150px]'
@@ -394,15 +434,19 @@ export const GameHUD: React.FC<Props> = ({
             onPointerMove={stickActive ? handleStickMove : undefined}
             onPointerUp={handlePointerUpStick}
             onPointerCancel={handlePointerUpStick}
-            className="w-28 h-28 short:w-24 short:h-24 rounded-full bg-slate-900/60 backdrop-blur-sm border-4 border-slate-900 relative flex items-center justify-center touch-none select-none"
-            style={CHUNKY}
+            className="rounded-full bg-slate-900/60 backdrop-blur-sm border-4 border-slate-900 relative flex items-center justify-center touch-none select-none"
+            style={{ ...CHUNKY, width: 112 * appliedTouchScale, height: 112 * appliedTouchScale }}
             aria-label="Movement joystick"
           >
             <div
-              className={`w-12 h-12 rounded-full border-3 border-slate-900 flex items-center justify-center shadow-lg ${
+              className={`rounded-full border-3 border-slate-900 flex items-center justify-center shadow-lg ${
                 stickActive ? 'bg-amber-400' : 'bg-white'
               }`}
-              style={{ transform: `translate(${stickOffset.x}px, ${stickOffset.y}px)` }}
+              style={{
+                width: 48 * appliedTouchScale,
+                height: 48 * appliedTouchScale,
+                transform: `translate(${stickOffset.x}px, ${stickOffset.y}px)`,
+              }}
             >
               <div className="w-3.5 h-3.5 rounded-full bg-slate-900/30" />
             </div>
@@ -411,7 +455,10 @@ export const GameHUD: React.FC<Props> = ({
       </div>
 
       {/* BOTTOM-RIGHT: touch buttons or desktop key hints */}
-      <div className="fixed safe-br pointer-events-auto flex flex-col items-end gap-3">
+      <div
+        className="fixed safe-br pointer-events-auto flex flex-col items-end gap-3 origin-bottom-right"
+        style={isTouch && appliedTouchScale !== 1 ? { transform: `scale(${appliedTouchScale})` } : undefined}
+      >
         {isTouch ? (
           <div className="flex items-end gap-2.5">
             <div className="flex flex-col gap-2.5 short:gap-2">
@@ -420,7 +467,7 @@ export const GameHUD: React.FC<Props> = ({
                   e.preventDefault();
                   onTouchJump?.();
                 }}
-                className="w-14 h-14 short:w-12 short:h-12 rounded-2xl bg-rose-500 active:bg-rose-600 text-white border-4 border-slate-900 font-brand text-xs uppercase flex flex-col items-center justify-center leading-none transition active:scale-90"
+                className="w-14 h-14 rounded-2xl bg-rose-500 active:bg-rose-600 text-white border-4 border-slate-900 font-brand text-xs uppercase flex flex-col items-center justify-center leading-none transition active:scale-90"
                 style={CHUNKY}
                 aria-label="Jump for a smash"
               >
@@ -432,7 +479,7 @@ export const GameHUD: React.FC<Props> = ({
                   e.preventDefault();
                   onTouchLob?.();
                 }}
-                className="w-14 h-14 short:w-12 short:h-12 rounded-2xl bg-indigo-500 active:bg-indigo-600 text-white border-4 border-slate-900 font-brand text-xs uppercase flex flex-col items-center justify-center leading-none transition active:scale-90"
+                className="w-14 h-14 rounded-2xl bg-indigo-500 active:bg-indigo-600 text-white border-4 border-slate-900 font-brand text-xs uppercase flex flex-col items-center justify-center leading-none transition active:scale-90"
                 style={CHUNKY}
                 aria-label="Lob"
               >
@@ -454,7 +501,7 @@ export const GameHUD: React.FC<Props> = ({
                 e.preventDefault();
                 onTouchHitEnd?.();
               }}
-              className="w-24 h-24 short:w-20 short:h-20 rounded-3xl bg-amber-400 active:bg-amber-500 text-slate-950 border-4 border-slate-900 font-brand text-xl uppercase flex flex-col items-center justify-center leading-none transition active:scale-95 touch-none"
+              className="w-24 h-24 rounded-3xl bg-amber-400 active:bg-amber-500 text-slate-950 border-4 border-slate-900 font-brand text-xl uppercase flex flex-col items-center justify-center leading-none transition active:scale-95 touch-none"
               style={{ boxShadow: '4px 4px 0px #0f172a' }}
               aria-label="Hit (hold to charge)"
             >

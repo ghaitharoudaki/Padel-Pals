@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Settings, Volume2, Music, Eye, Award, X, Check, Zap, Target } from 'lucide-react';
 import { CameraPreset, MatchLength, AimAssist } from '../game/types';
 import { padelAudio } from '../game/audio';
+import { TouchControlSizePicker } from './TouchControlSizePicker';
+import { TouchControlSize } from './touchControlSize';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -16,6 +18,8 @@ interface SettingsModalProps {
   onToggleGoldenPoint?: () => void;
   aimAssist?: AimAssist;
   onSelectAimAssist?: (level: AimAssist) => void;
+  touchControlSize?: TouchControlSize;
+  onSelectTouchControlSize?: (size: TouchControlSize) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -31,6 +35,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onToggleGoldenPoint,
   aimAssist = 'high',
   onSelectAimAssist,
+  touchControlSize = 'normal',
+  onSelectTouchControlSize,
 }) => {
   const [sfxVol, setSfxVol] = useState(Math.round(padelAudio.sfxVolume * 100));
   const [musicVol, setMusicVol] = useState(Math.round(padelAudio.musicVolume * 100));
@@ -124,6 +130,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               className="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-500 border-2 border-slate-900"
             />
           </div>
+
+          {/* Touch controls size */}
+          {onSelectTouchControlSize && (
+            <TouchControlSizePicker value={touchControlSize} onChange={onSelectTouchControlSize} />
+          )}
 
           {/* Camera View Angle Selector */}
           <div className="p-4 rounded-2xl bg-slate-50 border-3 border-slate-900 space-y-2">
