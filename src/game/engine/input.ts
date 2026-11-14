@@ -254,8 +254,17 @@ export class InputManager {
     return mount.contains(target);
   }
 
+  /** Browsers emulate mouse events after a touch; touch play uses the on-screen buttons instead. */
+  private lastTouchAt = 0;
+  private handleTouchStart = () => {
+    this.lastTouchAt = performance.now();
+  };
+  private isEmulatedMouse(): boolean {
+    return performance.now() - this.lastTouchAt < 1000;
+  }
+
   private handleMouseDown = (e: MouseEvent) => {
-    if (!this.isEnabled || !this.isGameSurface(e.target)) return;
+    if (!this.isEnabled || !this.isGameSurface(e.target) || this.isEmulatedMouse()) return;
     if (e.button === 0) {
       this.isCharging = true;
       this.chargeStartTime = performance.now();
@@ -267,7 +276,7 @@ export class InputManager {
   };
 
   private handleMouseUp = (e: MouseEvent) => {
-    if (!this.isEnabled) return;
+    if (!this.isEnabled || this.isEmulatedMouse()) return;
     if (e.button === 0 && this.isCharging) {
       this.isCharging = false;
       const power = Math.max(0.55, this.currentChargePower);
@@ -360,6 +369,7 @@ export class InputManager {
       window.addEventListener('keydown', this.handleKeyDown);
       window.addEventListener('keyup', this.handleKeyUp);
       window.addEventListener('blur', this.handleBlur);
+      window.addEventListener('touchstart', this.handleTouchStart, { capture: true, passive: true });
     }
   }
 
@@ -371,6 +381,7 @@ export class InputManager {
       window.removeEventListener('keydown', this.handleKeyDown);
       window.removeEventListener('keyup', this.handleKeyUp);
       window.removeEventListener('blur', this.handleBlur);
+      window.removeEventListener('touchstart', this.handleTouchStart, { capture: true });
     }
   }
 }

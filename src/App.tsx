@@ -52,6 +52,7 @@ import { updateBotAI } from './game/engine/bot';
 import { padelAudio } from './game/audio';
 import { FixedTimestepLoop } from './game/engine/loop';
 import { CameraController } from './game/scene/camera';
+import { AdaptiveResolution, detectDeviceProfile, getQualityOptions } from './game/scene/quality';
 import { InputManager, SwingIntent } from './game/engine/input';
 import {
   MultiplayerClient,
@@ -480,12 +481,14 @@ export default function App() {
     cameraController.setPreset(cameraPresetRef.current);
     cameraControllerRef.current = cameraController;
 
+    const deviceProfile = detectDeviceProfile();
+    const adaptiveResolution = new AdaptiveResolution(getQualityOptions(deviceProfile, isSoftwareGl));
     const renderer = new THREE.WebGLRenderer({
       antialias: !isSoftwareGl,
       powerPreference: 'high-performance',
     });
+    renderer.setPixelRatio(adaptiveResolution.pixelRatio);
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     mountRef.current.appendChild(renderer.domElement);
@@ -1135,10 +1138,15 @@ export default function App() {
       if (!mountRef.current) return;
       const w = mountRef.current.clientWidth;
       const h = mountRef.current.clientHeight;
+      if (w <= 0 || h <= 0) return;
       cameraController.updateAspect(w, h);
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    // Catches rotation, iOS toolbar collapse and split-screen changes that skip 'resize'.
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null;
+    resizeObserver?.observe(mountRef.current);
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!isMenuScreen(screenStateRef.current)) return;
@@ -1620,6 +1628,13 @@ export default function App() {
 
           renderer.render(scene, cameraController.camera);
 
+          // Adaptive resolution: trade sharpness for a steady frame rate on slower devices.
+          const nextPixelRatio = adaptiveResolution.sample(dt);
+          if (nextPixelRatio !== null) {
+            renderer.setPixelRatio(nextPixelRatio);
+            handleResize();
+          }
+
 
           // HUD serve prompt for the local player
           const serveHint =
@@ -1657,6 +1672,9 @@ export default function App() {
           })),
         ball: () => ({ ...ballRef.current.position, inPlay: ballRef.current.inPlay }),
         camera: () => cameraController.camera.position.toArray(),
+        fps: () => gameLoop.currentFps,
+        pixelRatio: () => renderer.getPixelRatio(),
+        fov: () => cameraController.camera.fov,
         screen: () => screenStateRef.current,
       };
     }
@@ -1676,6 +1694,8 @@ export default function App() {
       inputManager.dispose();
       inputManagerRef.current = null;
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+      resizeObserver?.disconnect();
       window.removeEventListener('mousemove', handleMouseMove);
       renderer.dispose();
       if (mountRef.current?.contains(renderer.domElement)) {

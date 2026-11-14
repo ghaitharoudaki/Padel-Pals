@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Short screens (landscape phones): compact menus and HUD. Use as `short:p-2`. */
+@custom-variant short (@media (max-height: 540px));
+
 html,
 body,
 #root {
@@ -11,7 +14,50 @@ body,
 
 body {
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-text-size-adjust: 100%;
   touch-action: manipulation;
+}
+
+input,
+textarea,
+select {
+  -webkit-user-select: text;
+  user-select: text;
+  /* 16px stops iOS Safari from zooming into focused inputs. */
+  font-size: max(16px, 1em);
+}
+
+/* Notch / home-indicator safe areas for fixed HUD corners. */
+.safe-top {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+  padding-left: max(0.5rem, env(safe-area-inset-left));
+  padding-right: max(0.5rem, env(safe-area-inset-right));
+}
+.safe-bl {
+  left: max(0.75rem, env(safe-area-inset-left));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+.safe-br {
+  right: max(0.75rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* Overlay that can always scroll to its content on small screens (centered when it fits). */
+.pp-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right))
+    max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
+}
+.pp-overlay > * {
+  margin: auto;
 }
 
 /* Lightweight replacements for the tailwindcss-animate utilities used across the UI. */

@@ -1,6 +1,22 @@
 import * as THREE from 'three';
 import { CameraPreset, Side, Vector3D } from '../types';
 
+/** Vertical FOV used on wide screens. */
+export const BASE_FOV = 54;
+/** Aspect ratio the base FOV was tuned for; narrower screens widen the FOV to keep the court in frame. */
+const REFERENCE_ASPECT = 16 / 9;
+
+/**
+ * Keep the horizontal field of view no narrower than on a 16:9 screen, so phones in portrait
+ * and 4:3 tablets still see the full court width instead of a cropped centre strip.
+ */
+export function fovForAspect(aspect: number): number {
+  if (!Number.isFinite(aspect) || aspect <= 0 || aspect >= REFERENCE_ASPECT) return BASE_FOV;
+  const halfHorizontal = Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2)) * REFERENCE_ASPECT);
+  const vertical = 2 * Math.atan(Math.tan(halfHorizontal) / aspect);
+  return Math.min(100, THREE.MathUtils.radToDeg(vertical));
+}
+
 export class CameraController {
   public camera: THREE.PerspectiveCamera;
   public preset: CameraPreset = 'broadcast';
@@ -15,7 +31,7 @@ export class CameraController {
 
   constructor(aspect: number) {
     // 54 FOV offers realistic broadcast depth and prevents fisheye warping
-    this.camera = new THREE.PerspectiveCamera(54, aspect, 0.1, 150);
+    this.camera = new THREE.PerspectiveCamera(fovForAspect(aspect), aspect, 0.1, 150);
     this.camera.position.set(0.55, 1.65, 6.90);
     this.camera.lookAt(0.85, 1.05, 4.0);
   }
@@ -74,7 +90,9 @@ export class CameraController {
   }
 
   public updateAspect(width: number, height: number) {
+    if (width <= 0 || height <= 0) return;
     this.camera.aspect = width / height;
+    this.camera.fov = fovForAspect(this.camera.aspect);
     this.camera.updateProjectionMatrix();
   }
 

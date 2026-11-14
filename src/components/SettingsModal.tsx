@@ -49,9 +49,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+    <div className="pp-overlay z-50 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
       <div
-        className="w-full max-w-lg bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 relative text-slate-950 max-h-[90vh] overflow-y-auto animate-in slide-in-from-right-8 duration-250 ease-out"
+        className="w-full max-w-lg bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 short:p-4 relative text-slate-950 animate-in slide-in-from-right-8 duration-250 ease-out"
         style={{ boxShadow: '8px 8px 0px #0f172a' }}
       >
         {/* Close Button */}
