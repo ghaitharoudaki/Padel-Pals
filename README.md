@@ -43,6 +43,10 @@ tests/                    Tests grouped the same way (engine/, scene/, net/, ui/
 
 The host's browser runs the match; the server only relays packets between players in a room, so it works across any network. When no server is reachable (for example a static-only deploy), the game falls back to PeerJS peer-to-peer WebRTC.
 
+## Configuration
+
+Copy `.env.example` to `.env` if you need to override defaults. `VITE_RELAY_URL` points a separately hosted client at the relay server; `VITE_TURN_CREDENTIALS_URL` adds TURN servers for the WebRTC fallback.
+
 ## Debugging
 
 - `F3` gameplay debug overlay, `F4` network stats overlay.
