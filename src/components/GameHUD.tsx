@@ -3,6 +3,8 @@ import { ScoreState, ShotType, GameMode, Side } from '../game/types';
 import { describeMatchFormat } from '../game/engine/rules';
 import { Volume2, VolumeX, HelpCircle, LogOut, Pause, Zap, WifiOff } from 'lucide-react';
 import { padelAudio } from '../game/audio';
+import { formatAction, formatKey } from '../game/engine/controls';
+import { useKeyBindings } from './ControlsRemapper';
 
 interface Props {
   score: ScoreState;
@@ -137,6 +139,10 @@ export const GameHUD: React.FC<Props> = ({
   onTouchJump,
   touchScale = 1,
 }) => {
+  const bindings = useKeyBindings();
+  const moveKeys = (['moveUp', 'moveLeft', 'moveDown', 'moveRight'] as const)
+    .map((a) => formatKey(bindings[a][0] || '') || '?')
+    .join('');
   const shot = SHOT_INFO[currentShot] || SHOT_INFO.flat;
   const appliedTouchScale = useFittedTouchScale(touchScale);
   const isOnline = gameMode.startsWith('online');
@@ -390,7 +396,7 @@ export const GameHUD: React.FC<Props> = ({
           >
             <div className="text-lg sm:text-xl leading-none">Your serve!</div>
             <div className="text-[11px] font-sans font-black mt-1 opacity-80">
-              {isTouch ? 'Tap HIT to serve' : 'Press SPACE or click to serve'}
+              {isTouch ? 'Tap HIT to serve' : `Press ${formatAction(bindings, 'shot').toUpperCase()} or click to serve`}
             </div>
           </div>
         </div>
@@ -515,15 +521,21 @@ export const GameHUD: React.FC<Props> = ({
               className="bg-white/95 border-3 border-slate-900 rounded-xl py-1.5 px-3 text-slate-950 font-bold text-[11px] uppercase grid grid-cols-[auto_auto] gap-x-2 gap-y-1 items-center"
               style={CHUNKY}
             >
-              <Kbd tone="text-cyan-400">WASD</Kbd>
+              <Kbd tone="text-cyan-400">{moveKeys}</Kbd>
               <span>Move + aim</span>
-              <Kbd tone="text-amber-400">SPACE / CLICK</Kbd>
-              <span>Hold, release to hit</span>
-              <Kbd tone="text-indigo-400">Q / F</Kbd>
-              <span>Lob / drop (hold)</span>
-              <Kbd tone="text-rose-400">E</Kbd>
-              <span>Jump smash</span>
-              <Kbd tone="text-emerald-400">SHIFT</Kbd>
+              <Kbd tone="text-amber-400">{formatAction(bindings, 'shot')}</Kbd>
+              <span>Drive (hold, release)</span>
+              <Kbd tone="text-indigo-400">{formatAction(bindings, 'lob')}</Kbd>
+              <span>Lob</span>
+              <Kbd tone="text-emerald-400">{formatAction(bindings, 'slice')}</Kbd>
+              <span>Slice</span>
+              <Kbd tone="text-pink-400">{formatAction(bindings, 'drop')}</Kbd>
+              <span>Drop shot</span>
+              <Kbd tone="text-rose-400">{formatAction(bindings, 'smash')}</Kbd>
+              <span>Smash</span>
+              <Kbd tone="text-orange-400">{formatAction(bindings, 'jump')}</Kbd>
+              <span>Jump</span>
+              <Kbd tone="text-emerald-400">{formatAction(bindings, 'sprint')}</Kbd>
               <span>Sprint</span>
             </div>
           </div>

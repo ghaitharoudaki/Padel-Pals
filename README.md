@@ -30,6 +30,7 @@ src/
       player.ts, bot.ts     Player movement and bot AI
       ball.ts               Bajada (wall rebound) helpers
       input.ts              Keyboard, mouse and touch input
+      controls.ts           Rebindable key layout (defaults, storage, remap helpers)
       loop.ts               Fixed 60 Hz game loop
     scene/                Three.js visuals
       court.ts, crowd.ts, avatar.ts, camera.ts
@@ -38,6 +39,23 @@ src/
       netcodeBinary.ts      Compact binary snapshot/input encoding
 tests/                    Tests grouped the same way (engine/, scene/, net/, ui/)
 ```
+
+## Controls
+
+Default keyboard layout (arcade-tennis style: one button per shot, hold to charge, release to swing, hold a direction to aim):
+
+| Action | Keys |
+| --- | --- |
+| Move / aim | WASD or arrow keys |
+| Drive (context: auto smash / bajada / topspin) | Space or J, left click |
+| Lob | L or Q |
+| Slice | K |
+| Drop shot | F or I |
+| Smash | U, right click |
+| Jump | E |
+| Sprint | Shift |
+
+Every key can be rebound in **Settings → Keyboard Controls** (stored in `localStorage`). Pressing a shot slightly early is fine: the swing is buffered and fires as soon as the ball is in reach. Hit reach follows a realistic racket envelope (see `REACH` in `src/game/engine/physics.ts`).
 
 ## Online play
 

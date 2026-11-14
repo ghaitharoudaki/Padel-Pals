@@ -1,5 +1,14 @@
 import * as THREE from 'three';
-import { AimTargetZone, HitQuality, ShotType, Side, Vector3D } from '../types';
+import { AimTargetZone, ShotType, Side, Vector3D } from '../types';
+import {
+  ControlAction,
+  KeyBindings,
+  SHOT_ACTIONS,
+  SHOT_FOR_ACTION,
+  buildCodeMap,
+  getBindings,
+  subscribeBindings,
+} from './controls';
 
 export interface SwingIntent {
   shot: ShotType;
@@ -37,8 +46,14 @@ export const AIM_ZONES: Record<AimTargetZone, Vector3D> = {
 export class InputManager {
   private config: InputManagerConfig;
   public isEnabled = false;
-  private keys: Record<string, boolean> = {};
+  /** Actions currently held down (movement, sprint, shot buttons). */
+  private held = new Set<ControlAction>();
+  private codeMap: Map<string, ControlAction> = buildCodeMap(getBindings());
+  private unsubscribeBindings: (() => void) | null = null;
   private isCharging = false;
+  /** Which shot button started the current charge and the shot it will play. */
+  private chargeAction: ControlAction | null = null;
+  private chargeShot: ShotType | undefined = undefined;
   private chargeStartTime = 0;
   private currentChargePower = 0.65;
 
@@ -52,21 +67,62 @@ export class InputManager {
 
   constructor(config: InputManagerConfig) {
     this.config = config;
+    this.unsubscribeBindings = subscribeBindings((b) => this.setBindings(b));
     this.attach();
+  }
+
+  /** Apply a new key layout. Held keys are released so nothing stays stuck. */
+  public setBindings(bindings: KeyBindings) {
+    this.codeMap = buildCodeMap(bindings);
+    this.held.clear();
+  }
+
+  private resetCharge() {
+    this.isCharging = false;
+    this.chargeAction = null;
+    this.chargeShot = undefined;
+    this.currentChargePower = 0.65;
+    this.config.onChargeChange(0.65);
+  }
+
+  private beginCharge(action: ControlAction | null, shot: ShotType | undefined) {
+    this.isCharging = true;
+    this.chargeAction = action;
+    this.chargeShot = shot;
+    this.chargeStartTime = performance.now();
+    this.currentChargePower = 0.5;
+    this.config.onChargeChange(this.currentChargePower);
+  }
+
+  private releaseCharge(minPower: number) {
+    const shot = this.chargeShot;
+    const power = Math.max(minPower, this.currentChargePower);
+    this.resetCharge();
+    this.triggerHit(power, shot);
   }
 
   public setEnabled(enabled: boolean) {
     this.isEnabled = enabled;
     if (!enabled) {
-      this.keys = {};
+      this.held.clear();
       this.isCharging = false;
+      this.chargeAction = null;
+      this.chargeShot = undefined;
       this.currentChargePower = 0.65;
       this.virtualStick = { x: 0, z: 0 };
     }
   }
 
+  /** Actions currently held, e.g. { moveUp: true, sprint: true }. */
   public getKeys(): Record<string, boolean> {
-    return this.keys;
+    const out: Record<string, boolean> = {};
+    this.held.forEach((a) => (out[a] = true));
+    return out;
+  }
+
+  /** Shot the current charge will play (`undefined` = context drive). */
+  public getChargeShot(): ShotType | undefined {
+    return this.chargeShot;
   }
 
   public setVirtualStick(x: number, z: number) {
@@ -85,10 +141,10 @@ export class InputManager {
   private getRawStick(): { x: number; z: number } {
     let x = this.virtualStick.x;
     let z = this.virtualStick.z;
-    if (this.keys['d'] || this.keys['arrowright']) x += 1;
-    if (this.keys['a'] || this.keys['arrowleft']) x -= 1;
-    if (this.keys['s'] || this.keys['arrowdown']) z += 1;
-    if (this.keys['w'] || this.keys['arrowup']) z -= 1;
+    if (this.held.has('moveRight')) x += 1;
+    if (this.held.has('moveLeft')) x -= 1;
+    if (this.held.has('moveDown')) z += 1;
+    if (this.held.has('moveUp')) z -= 1;
     return { x, z };
   }
 
@@ -111,7 +167,7 @@ export class InputManager {
       z /= len;
     }
 
-    const sprint = !!this.keys['shift'];
+    const sprint = this.held.has('sprint');
     return { x, z, sprint };
   }
 
@@ -125,13 +181,13 @@ export class InputManager {
     let col: 'left' | 'center' | 'right' = 'center';
     let row: 'short' | 'deep' = 'deep'; // Default is center-deep
 
-    if (move.x < -0.25 || this.keys['a'] || this.keys['arrowleft']) {
+    if (move.x < -0.25) {
       col = 'left';
-    } else if (move.x > 0.25 || this.keys['d'] || this.keys['arrowright']) {
+    } else if (move.x > 0.25) {
       col = 'right';
     }
 
-    if (move.z > 0.25 || this.keys['s'] || this.keys['arrowdown']) {
+    if (move.z > 0.25) {
       row = 'short';
     } else {
       row = 'deep'; // W, Up Arrow, or neutral defaults to deep
@@ -183,19 +239,10 @@ export class InputManager {
   }
 
   /**
-   * Determine shot type based on key shortcuts:
-   * - Shift held: Lob
-   * - Ctrl held: Drop shot
-   * - Jump / overhead: Smash
+   * Context shot for the drive button (no modifier keys - every special shot has its own button):
+   * bajada off the back glass, smash on a high ball, topspin when charged, otherwise flat.
    */
   public determineShotType(isOverheadOrJumping: boolean, isBajadaEligible: boolean): ShotType {
-    // Q = lob, F = drop shot. (Shift is sprint and Ctrl+W would close the tab, so neither is used.)
-    if (this.keys['f']) {
-      return 'drop';
-    }
-    if (this.keys['q']) {
-      return 'lob';
-    }
     if (isBajadaEligible) {
       return 'bajada';
     }
@@ -226,19 +273,13 @@ export class InputManager {
   // Mobile / Touch controls API
   public startTouchCharge() {
     if (!this.isEnabled) return;
-    this.isCharging = true;
-    this.chargeStartTime = performance.now();
-    this.currentChargePower = 0.50;
-    this.config.onChargeChange(this.currentChargePower);
+    this.beginCharge(null, undefined);
   }
 
   public releaseTouchCharge(forceShot?: ShotType) {
     if (!this.isEnabled) return;
-    this.isCharging = false;
-    const power = Math.max(0.60, this.currentChargePower);
-    this.triggerHit(power, forceShot);
-    this.currentChargePower = 0.65;
-    this.config.onChargeChange(0.65);
+    if (forceShot) this.chargeShot = forceShot;
+    this.releaseCharge(0.6);
   }
 
   public triggerTouchLob() {
@@ -266,10 +307,7 @@ export class InputManager {
   private handleMouseDown = (e: MouseEvent) => {
     if (!this.isEnabled || !this.isGameSurface(e.target) || this.isEmulatedMouse()) return;
     if (e.button === 0) {
-      this.isCharging = true;
-      this.chargeStartTime = performance.now();
-      this.currentChargePower = 0.50;
-      this.config.onChargeChange(this.currentChargePower);
+      if (!this.isCharging) this.beginCharge(null, undefined);
     } else if (e.button === 2) {
       this.triggerHit(0.95, 'smash');
     }
@@ -277,12 +315,8 @@ export class InputManager {
 
   private handleMouseUp = (e: MouseEvent) => {
     if (!this.isEnabled || this.isEmulatedMouse()) return;
-    if (e.button === 0 && this.isCharging) {
-      this.isCharging = false;
-      const power = Math.max(0.55, this.currentChargePower);
-      this.triggerHit(power);
-      this.currentChargePower = 0.65;
-      this.config.onChargeChange(0.65);
+    if (e.button === 0 && this.isCharging && this.chargeAction === null) {
+      this.releaseCharge(0.55);
     }
   };
 
@@ -298,51 +332,47 @@ export class InputManager {
     if (targetEl && (targetEl.tagName === 'INPUT' || targetEl.tagName === 'TEXTAREA' || targetEl.isContentEditable)) {
       return;
     }
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-      e.preventDefault();
-    }
+    // Leave browser shortcuts (Ctrl+R, Cmd+W, ...) alone.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-    const key = e.key.toLowerCase();
-    this.keys[key] = true;
-    if (e.key === 'Shift') this.keys['shift'] = true;
-    if (e.key === 'Control') this.keys['control'] = true;
+    const action = this.codeMap.get(e.code);
+    if (!action) return;
+    e.preventDefault();
+    this.held.add(action);
+    if (e.repeat) return;
 
-    // Spacebar: hit button (hold to charge, release to strike)
-    if (e.code === 'Space' && !e.repeat) {
-      e.preventDefault();
-      this.isCharging = true;
-      this.chargeStartTime = performance.now();
-      this.currentChargePower = 0.50;
-      this.config.onChargeChange(this.currentChargePower);
-    }
-
-    // J or E triggers jump for smash
-    if ((key === 'j' || key === 'e') && !e.repeat) {
-      e.preventDefault();
+    if (action === 'jump') {
       this.config.onJumpRequest?.();
+      return;
+    }
+
+    if (SHOT_ACTIONS.includes(action)) {
+      const shot = SHOT_FOR_ACTION[action];
+      if (!this.isCharging) {
+        this.beginCharge(action, shot);
+      } else {
+        // Switching buttons mid-charge changes the shot but keeps the charge (Top Spin style).
+        this.chargeAction = action;
+        this.chargeShot = shot;
+      }
     }
   };
 
   private handleKeyUp = (e: KeyboardEvent) => {
     if (!this.isEnabled) {
-      this.keys = {};
+      this.held.clear();
       return;
     }
 
-    const key = e.key.toLowerCase();
-    this.keys[key] = false;
-    if (e.key === 'Shift') this.keys['shift'] = false;
-    if (e.key === 'Control') this.keys['control'] = false;
+    const action = this.codeMap.get(e.code);
+    if (!action) return;
+    e.preventDefault();
 
-    if (e.code === 'Space') {
-      e.preventDefault();
-      if (this.isCharging) {
-        this.isCharging = false;
-        const power = Math.max(0.55, this.currentChargePower);
-        this.triggerHit(power);
-        this.currentChargePower = 0.65;
-        this.config.onChargeChange(0.65);
-      }
+    // Another key bound to the same action may still be down; that's rare enough to ignore.
+    this.held.delete(action);
+
+    if (this.isCharging && action === this.chargeAction) {
+      this.releaseCharge(0.55);
     }
   };
 
@@ -352,11 +382,9 @@ export class InputManager {
 
   /** Release everything when the window loses focus so keys never get "stuck". */
   private handleBlur = () => {
-    this.keys = {};
+    this.held.clear();
     if (this.isCharging) {
-      this.isCharging = false;
-      this.currentChargePower = 0.65;
-      this.config.onChargeChange(0.65);
+      this.resetCharge();
     }
     this.virtualStick = { x: 0, z: 0 };
   };
@@ -374,6 +402,8 @@ export class InputManager {
   }
 
   public dispose() {
+    this.unsubscribeBindings?.();
+    this.unsubscribeBindings = null;
     if (typeof window !== 'undefined') {
       window.removeEventListener('mousedown', this.handleMouseDown);
       window.removeEventListener('mouseup', this.handleMouseUp);

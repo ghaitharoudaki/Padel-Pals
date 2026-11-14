@@ -3,6 +3,7 @@ import { Settings, Volume2, Music, Eye, Award, X, Check, Zap, Target } from 'luc
 import { CameraPreset, MatchLength, AimAssist } from '../game/types';
 import { padelAudio } from '../game/audio';
 import { TouchControlSizePicker } from './TouchControlSizePicker';
+import { ControlsRemapper } from './ControlsRemapper';
 import { TouchControlSize } from './touchControlSize';
 
 interface SettingsModalProps {
@@ -83,7 +84,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               MATCH SETTINGS
             </h2>
             <p className="text-xs font-bold text-slate-600 mt-0.5">
-              Volume sliders, camera perspectives & match rules
+              Volume, camera, match rules & controls
             </p>
           </div>
         </div>
@@ -271,6 +272,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             >
               {goldenPoint ? 'ENABLED' : 'OFF'}
             </button>
+          </div>
+
+          {/* Keyboard remapping (hidden on touch-only devices) */}
+          <div className="hidden [@media(any-pointer:fine)]:block">
+            <ControlsRemapper />
           </div>
         </div>
 

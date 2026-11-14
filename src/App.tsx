@@ -853,8 +853,43 @@ export default function App() {
       emitFx({ k: 'hit', slot, shot: 'flat', quality: 'GOOD', power, pos: { ...ballRef.current.position } });
     }
 
-    // Local player's swing (ONE hit button with auto shot selection)
-    function executeSwing(intent: SwingIntent) {
+    /**
+     * Swing buffer (arcade-tennis style): a shot pressed a moment before the ball arrives is held
+     * and fires automatically as soon as the ball enters your reach, instead of whiffing.
+     */
+    const SWING_BUFFER_MS = 320;
+    let bufferedSwing: { intent: SwingIntent; until: number } | null = null;
+
+    function isBallComingTo(player: PlayerState, b: BallState): boolean {
+      if (!b.inPlay || b.lastHitter === player.side) return false;
+      const towardsMe = player.side === 'south' ? b.velocity.z > 0.3 : b.velocity.z < -0.3;
+      const onMySide = player.side === 'south' ? b.position.z > 0 : b.position.z < 0;
+      return towardsMe || onMySide;
+    }
+
+    function processBufferedSwing(now: number) {
+      if (!bufferedSwing) return;
+      if (screenStateRef.current !== 'PLAYING' || isFrozenRef.current) {
+        bufferedSwing = null;
+        return;
+      }
+      const local = playerForSlot(getLocalSlot());
+      const b = ballRef.current;
+      const timing = evaluateContactTiming(local.position, b.position, local.side);
+      if (timing.quality !== 'OUT_OF_REACH' && canPlayerStrikeBall(b, local.side)) {
+        const { intent } = bufferedSwing;
+        bufferedSwing = null;
+        executeSwing(intent, true);
+      } else if (now > bufferedSwing.until || !isBallComingTo(local, b)) {
+        bufferedSwing = null;
+        local.isSwinging = true;
+        local.racketSwingProgress = 0;
+        triggerHitFeedback('WHIFF!');
+      }
+    }
+
+    // Local player's swing (dedicated shot buttons, context drive on the main hit button)
+    function executeSwing(intent: SwingIntent, fromBuffer = false) {
       if (isFrozenRef.current) return;
       const onlineClient = isOnlineClient();
       const slot = getLocalSlot();
@@ -888,6 +923,16 @@ export default function App() {
         return;
       }
 
+      // Too early? Hold the swing and let it fire when the ball arrives.
+      if (!fromBuffer) {
+        const early = evaluateContactTiming(localPlayer.position, b.position, localPlayer.side);
+        if (early.quality === 'OUT_OF_REACH' && isBallComingTo(localPlayer, b)) {
+          bufferedSwing = { intent, until: performance.now() + SWING_BUFFER_MS };
+          return;
+        }
+      }
+      bufferedSwing = null;
+
       localPlayer.isSwinging = true;
       localPlayer.racketSwingProgress = 0;
       const dx = b.position.x - localPlayer.position.x;
@@ -905,6 +950,9 @@ export default function App() {
         } else if (intent.power > 0.75) {
           selectedShot = 'topspin';
         }
+      } else if (selectedShot === 'smash' && b.position.y < 1.3 && !localPlayer.isJumping) {
+        // You can't smash a ball at knee height - play a drive instead.
+        selectedShot = intent.power > 0.75 ? 'topspin' : 'flat';
       }
 
       const aimTarget = intent.targetAim || mouseAimRef.current;
@@ -1439,6 +1487,7 @@ export default function App() {
           courtVisuals.setNearWallVisible(isMenu);
 
           inputManager.update(now, dt);
+          processBufferedSwing(now);
 
           // Animate golden spark particles if active
           if (sparkLife > 0) {
@@ -1692,6 +1741,8 @@ export default function App() {
         fov: () => cameraController.camera.fov,
         screen: () => screenStateRef.current,
         score: () => ({ points: [...scoreRef.current.points], games: [...scoreRef.current.games], rally: scoreRef.current.rallyCount }),
+        shot: () => currentShotRef.current,
+        lastHitter: () => ballRef.current.lastHitter,
       };
     }
 

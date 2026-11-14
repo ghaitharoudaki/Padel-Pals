@@ -1,6 +1,8 @@
 import React from 'react';
 import { Gamepad2, X, Sparkles, Zap, ShieldAlert, Check } from 'lucide-react';
 import { padelAudio } from '../game/audio';
+import { formatAction, formatKey } from '../game/engine/controls';
+import { useKeyBindings } from './ControlsRemapper';
 
 interface Props {
   isOpen: boolean;
@@ -8,7 +10,16 @@ interface Props {
 }
 
 export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
+  const bindings = useKeyBindings();
   if (!isOpen) return null;
+  const k = (a: Parameters<typeof formatAction>[1]) => formatKey(bindings[a][0] || '') || '?';
+  const shots: { label: string; keys: string; tone: string; desc: string }[] = [
+    { label: 'Drive', keys: `${formatAction(bindings, 'shot')} / Left click`, tone: 'text-slate-950', desc: 'Hold to charge, release to hit. Auto-smashes high balls and plays the bajada off the glass. Also serves.' },
+    { label: 'Lob', keys: formatAction(bindings, 'lob'), tone: 'text-indigo-600', desc: 'One button: high arc over net players.' },
+    { label: 'Slice', keys: formatAction(bindings, 'slice'), tone: 'text-emerald-600', desc: 'Low backspin that skids off the glass.' },
+    { label: 'Drop', keys: formatAction(bindings, 'drop'), tone: 'text-pink-600', desc: 'Soft shot that dies close to the net.' },
+    { label: 'Smash', keys: `${formatAction(bindings, 'smash')} / Right click`, tone: 'text-rose-600', desc: `Overhead kill. Jump (${formatAction(bindings, 'jump')}) to reach higher.` },
+  ];
 
   return (
     <div className="pp-overlay z-50 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
@@ -50,23 +61,23 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <span>Easy Directional Aiming (3x2 Grid)</span>
             </div>
             <p className="text-xs font-bold text-slate-700 leading-relaxed">
-              Move with WASD / arrows (Shift to sprint). The direction you hold when you hit picks the target, shown by the yellow reticle on the opponent&apos;s court:
+              Move with {k('moveUp')}{k('moveLeft')}{k('moveDown')}{k('moveRight')} ({formatAction(bindings, 'sprint')} to sprint). The direction you hold when you hit picks the target, shown by the yellow reticle on the opponent&apos;s court:
             </p>
             <div className="grid grid-cols-3 gap-1.5 text-center text-xs pt-1 font-brand">
               <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
-                <span className="text-indigo-600 block text-xs">S + A</span>
+                <span className="text-indigo-600 block text-xs">{k('moveDown')} + {k('moveLeft')}</span>
                 <span className="text-[10px] text-slate-600 font-sans font-bold">Short Left</span>
               </div>
               <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
-                <span className="text-indigo-600 block text-xs">S / Down</span>
+                <span className="text-indigo-600 block text-xs">{k('moveDown')}</span>
                 <span className="text-[10px] text-slate-600 font-sans font-bold">Short Center</span>
               </div>
               <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
-                <span className="text-indigo-600 block text-xs">S + D</span>
+                <span className="text-indigo-600 block text-xs">{k('moveDown')} + {k('moveRight')}</span>
                 <span className="text-[10px] text-slate-600 font-sans font-bold">Short Right</span>
               </div>
               <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
-                <span className="text-emerald-600 block text-xs">A / Left</span>
+                <span className="text-emerald-600 block text-xs">{k('moveLeft')}</span>
                 <span className="text-[10px] text-slate-600 font-sans font-bold">Deep Left</span>
               </div>
               <div className="bg-amber-100 p-2 rounded-xl border-2 border-slate-900">
@@ -74,7 +85,7 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 <span className="text-[10px] text-slate-700 font-sans font-bold">Deep Center (Default)</span>
               </div>
               <div className="bg-white p-2 rounded-xl border-2 border-slate-900">
-                <span className="text-emerald-600 block text-xs">D / Right</span>
+                <span className="text-emerald-600 block text-xs">{k('moveRight')}</span>
                 <span className="text-[10px] text-slate-600 font-sans font-bold">Deep Right</span>
               </div>
             </div>
@@ -84,26 +95,25 @@ export const ControlsGuideModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <div className="p-4 bg-slate-50 border-3 border-slate-900 rounded-2xl space-y-2.5">
             <div className="flex items-center gap-2 font-brand text-lg uppercase text-slate-950">
               <Zap className="w-5 h-5 text-cyan-500 fill-current" />
-              <span>Shot Types &amp; Shortcuts</span>
+              <span>One Button Per Shot</span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-slate-950 block">SPACE / LEFT CLICK</span>
-                <span className="text-[11px] font-bold text-slate-600">Hold to charge, release to hit. Also serves.</span>
-              </div>
-              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-indigo-600 block">HOLD Q + HIT (LOB)</span>
-                <span className="text-[11px] font-bold text-slate-600">High arc defensive lob over opponents</span>
-              </div>
-              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-pink-600 block">HOLD F + HIT (DROP)</span>
-                <span className="text-[11px] font-bold text-slate-600">Soft drop shot that dies close to the net</span>
-              </div>
-              <div className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
-                <span className="font-brand text-sm text-rose-600 block">E JUMP / RIGHT CLICK (SMASH)</span>
-                <span className="text-[11px] font-bold text-slate-600">Smash any ball above head height</span>
+              {shots.map((shot) => (
+                <div key={shot.label} className="bg-white p-2.5 rounded-xl border-2 border-slate-900">
+                  <span className={`font-brand text-sm block ${shot.tone}`}>
+                    {shot.label.toUpperCase()} · {shot.keys.toUpperCase()}
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-600">{shot.desc}</span>
+                </div>
+              ))}
+              <div className="bg-amber-50 p-2.5 rounded-xl border-2 border-slate-900">
+                <span className="font-brand text-sm block text-amber-700">EARLY PRESS IS OK</span>
+                <span className="text-[11px] font-bold text-slate-600">
+                  Release a shot just before the ball arrives and you swing automatically once it is in reach.
+                </span>
               </div>
             </div>
+            <p className="text-[11px] font-bold text-slate-500">Change any key in Settings → Keyboard Controls.</p>
           </div>
 
           {/* Mobile & Touch Controls */}
