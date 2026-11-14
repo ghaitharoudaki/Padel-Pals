@@ -486,13 +486,54 @@ export function predictBallLanding(ball: BallState): {
 }
 
 /**
- * Evaluates contact timing and reach quality:
- * - PERFECT: tight sweetspot (0.8m - 1.35m horizontal distance, waist height 0.85m - 1.45m)
- *   -> power shot with golden spark, crisp pop audio
- * - EARLY: ball is struck ahead of optimal plane -> pulled shot with sharper angle
- * - LATE: ball is struck behind optimal plane -> weak reach, shallower depth
- * - GOOD: solid contact within 1.85m
- * - OUT_OF_REACH: outside 2.25m horizontal or > 3.2m height
+ * Realistic player hitbox (racket reach envelope), in metres.
+ *
+ * Built from a ~1.80 m player: shoulder ~0.20 m off the body centre, arm ~0.65 m,
+ * racket ~0.45 m, plus a short lunge/lean. The envelope is measured in the player's own frame
+ * (forward = towards the net, lateral = sideways) so a ball behind the body or far to the side
+ * is genuinely unreachable instead of falling inside a big circle around the feet.
+ */
+export const REACH = {
+  /** Sideways reach on either side (forehand or backhand) with a lunge. */
+  lateral: 1.6,
+  /** Reach in front of the body when stepping in. */
+  forward: 1.3,
+  /** You can only take a ball a little behind your hitting plane. */
+  backward: 0.45,
+  /** Lowest contact (racket scraping the turf). */
+  minHeight: 0.08,
+  /** Highest contact standing with the arm and racket fully extended overhead. */
+  maxStandingHeight: 2.7,
+  /** Ideal comfortable contact band (waist to shoulder). */
+  sweetLow: 0.55,
+  sweetHigh: 1.55,
+  /** Ideal sideways distance from the body for a groundstroke / volley. */
+  sweetLateralMin: 0.45,
+  sweetLateralMax: 1.15,
+  /** Closer than this to the body and below the shoulders you are jammed. */
+  jammedLateral: 0.3,
+} as const;
+
+/**
+ * Height scaling of the horizontal reach: you reach furthest around waist/chest height, less when
+ * bending for a ball at your shoes and much less for a ball at the top of your overhead reach.
+ */
+function reachScaleAtHeight(contactY: number, maxHeight: number): number {
+  if (contactY < 0.4) return 0.72 + 0.28 * ((contactY - REACH.minHeight) / (0.4 - REACH.minHeight));
+  if (contactY <= 1.9) return 1;
+  const t = Math.min(1, (contactY - 1.9) / Math.max(0.1, maxHeight - 1.9));
+  return 1 - 0.5 * t;
+}
+
+/**
+ * Evaluates contact timing and reach quality against the player's reach envelope:
+ * - OUT_OF_REACH: outside the elliptical reach (forward/back/lateral, scaled by height), above
+ *   the overhead reach (standing 2.7 m + jump height) or below turf level.
+ * - PERFECT: ball in the sweet spot - arm's length to the side, waist-to-shoulder height and
+ *   level with / slightly in front of the body (overheads: above the hitting shoulder).
+ * - EARLY: struck well out in front -> pulled shot.
+ * - LATE: struck behind the hitting plane, jammed into the body, or at full stretch.
+ * - GOOD: anything else inside the envelope.
  */
 export function evaluateContactTiming(
   playerPos: Vector3D,
@@ -505,64 +546,80 @@ export function evaluateContactTiming(
   timingOffsetZ: number;
 } {
   const dx = ballPos.x - playerPos.x;
-  const dy = ballPos.y - 1.1; // optimal height at 1.1m (waist to chest)
   const dz = ballPos.z - playerPos.z;
   const horizontalDist = Math.hypot(dx, dz);
 
-  // Beyond reachable radius or too high/low
-  if (horizontalDist > 2.25 || ballPos.y > 3.25 || ballPos.y < 0.1) {
+  // Player frame: south faces -Z, north faces +Z.
+  const forwardSign = playerSide === 'south' ? -1 : 1;
+  const forward = dz * forwardSign; // + = in front of the body
+  const lateral = Math.abs(dx);
+
+  const jumpHeight = Math.max(0, playerPos.y || 0);
+  const maxHeight = REACH.maxStandingHeight + jumpHeight;
+  const contactY = ballPos.y;
+
+  if (contactY < REACH.minHeight || contactY > maxHeight) {
     return { quality: 'OUT_OF_REACH', distance: horizontalDist, powerMultiplier: 0, timingOffsetZ: dz };
   }
 
-  // Timing offset along court Z axis:
-  // For South player (facing North / -Z): optimal hit plane is ~0.2m in front (z < player.z)
-  // dz < -0.4: Early (pulled)
-  // dz > +0.3: Late (jammed / reaching behind)
-  const forwardSign = playerSide === 'south' ? -1 : 1;
-  const relativeZ = dz * forwardSign; // positive = in front of player
-
-  const heightDist = Math.abs(dy);
-
-  if (horizontalDist <= 1.35 && heightDist <= 0.7) {
-    if (relativeZ >= -0.25 && relativeZ <= 0.45) {
-      return { quality: 'PERFECT', distance: horizontalDist, powerMultiplier: 1.25, timingOffsetZ: dz };
-    } else if (relativeZ > 0.45) {
-      return { quality: 'EARLY', distance: horizontalDist, powerMultiplier: 0.95, timingOffsetZ: dz };
-    } else {
-      return { quality: 'LATE', distance: horizontalDist, powerMultiplier: 0.85, timingOffsetZ: dz };
-    }
-  } else if (horizontalDist <= 1.85 && heightDist <= 1.1) {
-    return { quality: 'GOOD', distance: horizontalDist, powerMultiplier: 1.0, timingOffsetZ: dz };
-  } else {
-    return { quality: 'LATE', distance: horizontalDist, powerMultiplier: 0.78, timingOffsetZ: dz };
+  const scale = reachScaleAtHeight(contactY - jumpHeight, REACH.maxStandingHeight);
+  const fReach = (forward >= 0 ? REACH.forward : REACH.backward) * scale;
+  const lReach = REACH.lateral * scale;
+  // Normalised elliptical distance: <= 1 means the racket can get there.
+  const reachNorm = Math.hypot(forward / fReach, lateral / lReach);
+  if (reachNorm > 1) {
+    return { quality: 'OUT_OF_REACH', distance: horizontalDist, powerMultiplier: 0, timingOffsetZ: dz };
   }
+
+  const relHeight = contactY - jumpHeight;
+  const isOverhead = relHeight > 1.75;
+
+  // At full stretch you can only block the ball back.
+  if (reachNorm > 0.86) {
+    return { quality: 'LATE', distance: horizontalDist, powerMultiplier: 0.72, timingOffsetZ: dz };
+  }
+
+  if (isOverhead) {
+    // Overheads are best taken just in front of and above the hitting shoulder.
+    if (lateral <= 0.85 && forward >= -0.15 && forward <= 0.75) {
+      return { quality: 'PERFECT', distance: horizontalDist, powerMultiplier: 1.25, timingOffsetZ: dz };
+    }
+    if (forward < -0.15) {
+      return { quality: 'LATE', distance: horizontalDist, powerMultiplier: 0.8, timingOffsetZ: dz };
+    }
+    return { quality: 'GOOD', distance: horizontalDist, powerMultiplier: 1.0, timingOffsetZ: dz };
+  }
+
+  // Jammed: ball right into the body.
+  if (lateral < REACH.jammedLateral && forward < 0.35) {
+    return { quality: 'LATE', distance: horizontalDist, powerMultiplier: 0.8, timingOffsetZ: dz };
+  }
+
+  if (forward > 0.5) {
+    return { quality: 'EARLY', distance: horizontalDist, powerMultiplier: 0.95, timingOffsetZ: dz };
+  }
+  if (forward < -0.25) {
+    return { quality: 'LATE', distance: horizontalDist, powerMultiplier: 0.85, timingOffsetZ: dz };
+  }
+
+  const inSweetHeight = relHeight >= REACH.sweetLow && relHeight <= REACH.sweetHigh;
+  const inSweetLateral = lateral >= REACH.sweetLateralMin && lateral <= REACH.sweetLateralMax;
+  if (inSweetHeight && inSweetLateral) {
+    return { quality: 'PERFECT', distance: horizontalDist, powerMultiplier: 1.25, timingOffsetZ: dz };
+  }
+  return { quality: 'GOOD', distance: horizontalDist, powerMultiplier: 1.0, timingOffsetZ: dz };
 }
 
 /**
- * Backward compatibility evaluator based on horizontal distance and sweetspot height
+ * Backward compatibility evaluator (no side information): assumes a south player facing -Z.
  */
 export function evaluateContactQuality(
   playerPos: Vector3D,
   ballPos: Vector3D,
-  ballVelocityZ: number
+  _ballVelocityZ: number
 ): { quality: HitQuality; distance: number; powerMultiplier: number } {
-  const dx = ballPos.x - playerPos.x;
-  const dy = ballPos.y - 1.1;
-  const dz = ballPos.z - playerPos.z;
-  const dist = Math.hypot(dx, dz);
-
-  if (dist > 2.2 || ballPos.y > 3.2 || ballPos.y < 0.1) {
-    return { quality: 'OUT_OF_REACH', distance: dist, powerMultiplier: 0 };
-  }
-
-  const heightDist = Math.abs(dy);
-  if (dist <= 1.25 && heightDist <= 0.7) {
-    return { quality: 'PERFECT', distance: dist, powerMultiplier: 1.20 };
-  } else if (dist <= 1.80 && heightDist <= 1.2) {
-    return { quality: 'GOOD', distance: dist, powerMultiplier: 1.0 };
-  } else {
-    return { quality: 'LATE', distance: dist, powerMultiplier: 0.82 };
-  }
+  const t = evaluateContactTiming(playerPos, ballPos, 'south');
+  return { quality: t.quality, distance: t.distance, powerMultiplier: t.powerMultiplier };
 }
 
 /**
