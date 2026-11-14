@@ -256,6 +256,18 @@ export function getServeTargetBox(scoreOrPoints: ScoreState | number): 'right' |
   return sum % 2 === 0 ? 'right' : 'left';
 }
 
-export function getServePosition(targetBox: 'right' | 'left'): number {
-  return targetBox === 'right' ? 2.0 : -2.0;
+/**
+ * Lateral (X) position the server stands on: always diagonal to the target service box.
+ */
+export function getServePosition(targetBox: 'right' | 'left', isDoubles: boolean = true): number {
+  const offset = isDoubles ? 2.0 : 1.0;
+  return targetBox === 'right' ? -offset : offset;
+}
+
+/** Display name for match length in the HUD. */
+export function describeMatchFormat(score: ScoreState): string {
+  if (score.isTiebreak) return 'TIEBREAK';
+  if (score.targetGames === 1) return 'ONE GAME';
+  if (score.targetGames === 3) return 'FIRST TO 3';
+  return 'FIRST TO 6';
 }

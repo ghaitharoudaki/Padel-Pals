@@ -21,7 +21,8 @@ interface Props {
   onClose: () => void;
   onCreateRoom: (mode: '1v1' | '2v2', customCode?: string) => void;
   onJoinRoom: (roomId: string) => void;
-  onQuickMatch: () => void;
+  onQuickMatch: (mode: '1v1' | '2v2') => void;
+  isQuickMatching?: boolean;
   onSlotChange: (slot: 1 | 2 | 3 | 4) => void;
   onToggleReady: () => void;
   onToggleBotSlot: (slot: 1 | 2 | 3 | 4) => void;
@@ -48,6 +49,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
   onCreateRoom,
   onJoinRoom,
   onQuickMatch,
+  isQuickMatching = false,
   onSlotChange,
   onToggleReady,
   onToggleBotSlot,
@@ -115,7 +117,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
               Online Multiplayer
             </h2>
             <p className="text-xs text-zinc-400 font-medium">
-              Host-authoritative 60Hz Padel with dual-channel WebRTC & zero lag
+              Play with friends using a room code
             </p>
           </div>
         </div>
@@ -164,14 +166,15 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
                 <div className="font-black text-lg text-emerald-400 uppercase tracking-wide font-['Lilita_One',sans-serif]">
                   Quick Match
                 </div>
-                <div className="text-xs text-zinc-400">Jump right into an open room or instant host</div>
+                <div className="text-xs text-zinc-400">Join an open public room, or host one</div>
               </div>
               <button
-                onClick={onQuickMatch}
+                onClick={() => onQuickMatch(selectedCreateMode)}
+                disabled={isQuickMatching}
                 className="px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-sm uppercase rounded-xl border-2 border-black transition active:scale-95 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2"
               >
                 <Zap className="w-4 h-4 fill-current stroke-[2.5]" />
-                Play Now
+                {isQuickMatching ? 'Searching…' : 'Play Now'}
               </button>
             </div>
 
@@ -180,7 +183,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
               <div className="p-4 bg-zinc-800/50 border-3 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
                 <div>
                   <div className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
-                    Join by 5-Digit Code
+                    Join with Room Code
                   </div>
                   <input
                     type="text"
@@ -367,7 +370,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
               <div className="p-3 bg-blue-950/40 border-3 border-blue-600/50 rounded-2xl space-y-2">
                 <div className="text-xs font-black uppercase tracking-wider text-blue-400 flex items-center justify-between">
                   <span>Team Blue (South Court)</span>
-                  <span className="text-[10px] text-blue-300/70">Receives 1st</span>
+                  <span className="text-[10px] text-blue-300/70">Serves 1st</span>
                 </div>
                 {slots
                   .filter((s) => s.team === 'blue')
@@ -378,7 +381,7 @@ export const MultiplayerLobbyModal: React.FC<Props> = ({
               <div className="p-3 bg-red-950/40 border-3 border-red-600/50 rounded-2xl space-y-2">
                 <div className="text-xs font-black uppercase tracking-wider text-red-400 flex items-center justify-between">
                   <span>Team Red (North Court)</span>
-                  <span className="text-[10px] text-red-300/70">Serves 1st</span>
+                  <span className="text-[10px] text-red-300/70">Receives 1st</span>
                 </div>
                 {slots
                   .filter((s) => s.team === 'red')

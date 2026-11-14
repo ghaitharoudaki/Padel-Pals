@@ -237,7 +237,8 @@ export function encodeBinaryInputs(
     const jBit = inp.isJumping ? 1 : 0;
     const wBit = inp.wantsSwing ? 1 : 0;
     const stIndex = Math.max(0, SHOT_TYPES.indexOf(inp.shotType));
-    const flags = jBit | (wBit << 1) | (stIndex << 2);
+    const sBit = inp.sprint ? 1 : 0;
+    const flags = jBit | (wBit << 1) | (stIndex << 2) | (sBit << 6);
     v.setUint8(o, flags); o += 1;
   }
 
@@ -280,6 +281,7 @@ export function decodeBinaryInputs(
     const isJumping = (flags & 1) !== 0;
     const wantsSwing = (flags & 2) !== 0;
     const stIndex = (flags >> 2) & 15;
+    const sprint = (flags & 64) !== 0;
 
     inputs.push({
       seq,
@@ -291,6 +293,7 @@ export function decodeBinaryInputs(
       power,
       isJumping,
       wantsSwing,
+      sprint,
       shotType: SHOT_TYPES[stIndex] || 'flat',
       timestamp: clientTime,
     });

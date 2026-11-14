@@ -1,14 +1,19 @@
 import React from 'react';
-import { Trophy, RotateCcw, Palette } from 'lucide-react';
+import { Trophy, RotateCcw, Home, Users, Frown } from 'lucide-react';
 import { ScoreState, Side } from '../game/types';
+import { padelAudio } from '../game/audio';
 
 interface Props {
   isOpen: boolean;
   score: ScoreState;
   p1Name: string;
   p2Name: string;
+  localSide: Side;
+  isOnline?: boolean;
+  isHost?: boolean;
   onRematch: () => void;
-  onOpenCustomizer: () => void;
+  onBackToLobby?: () => void;
+  onExitToMenu: () => void;
 }
 
 export const MatchOverModal: React.FC<Props> = ({
@@ -16,62 +21,106 @@ export const MatchOverModal: React.FC<Props> = ({
   score,
   p1Name,
   p2Name,
+  localSide,
+  isOnline = false,
+  isHost = false,
   onRematch,
-  onOpenCustomizer,
+  onBackToLobby,
+  onExitToMenu,
 }) => {
   if (!isOpen || !score.winner) return null;
 
+  const youWon = score.winner === localSide;
   const winnerName = score.winner === 'south' ? p1Name : p2Name;
-  const isP1Winner = score.winner === 'south';
+  const canRematch = !isOnline || isHost;
+  const click = (fn: () => void) => {
+    padelAudio.playClickPop();
+    fn();
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-300">
-      <div className="relative w-full max-w-md bg-zinc-900 border border-amber-500/40 rounded-3xl shadow-2xl p-7 text-white text-center">
-        {/* Trophy icon */}
-        <div className="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-tr from-amber-600 to-yellow-400 p-4 shadow-xl shadow-amber-500/25 flex items-center justify-center mb-4">
-          <Trophy className="w-12 h-12 text-zinc-950" />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Match over"
+    >
+      <div
+        className={`relative w-full max-w-md border-4 border-slate-900 rounded-3xl p-6 sm:p-7 text-slate-950 text-center animate-in zoom-in-95 ${
+          youWon ? 'bg-amber-400' : 'bg-white'
+        }`}
+        style={{ boxShadow: '10px 10px 0px #0f172a' }}
+      >
+        <div
+          className={`mx-auto w-20 h-20 rounded-2xl border-4 border-slate-900 flex items-center justify-center mb-4 ${
+            youWon ? 'bg-white' : 'bg-slate-200'
+          }`}
+          style={{ boxShadow: '4px 4px 0px #0f172a' }}
+        >
+          {youWon ? <Trophy className="w-11 h-11 text-amber-500" /> : <Frown className="w-11 h-11 text-slate-500" />}
         </div>
 
-        <h2 className="text-2xl font-black tracking-tight text-white mb-1">
-          {winnerName} Triumphs!
+        <h2 className="font-brand text-4xl uppercase tracking-wide leading-none mb-1">
+          {youWon ? 'Victory!' : 'Defeat'}
         </h2>
-        <p className="text-xs text-amber-400/90 font-medium uppercase tracking-wider mb-6">
-          Padel Tournament Champion
+        <p className="text-sm font-black uppercase tracking-wider text-slate-700 mb-5">
+          {winnerName} {winnerName.includes('&') ? 'win' : 'wins'} the match
         </p>
 
-        {/* Final Scoreboard */}
-        <div className="p-4 bg-zinc-800/80 border border-zinc-700/80 rounded-2xl mb-6 flex items-center justify-around">
-          <div className="text-center">
-            <div className="text-xs font-semibold text-zinc-400 mb-1">{p1Name}</div>
-            <div className={`text-3xl font-black font-mono ${isP1Winner ? 'text-amber-400' : 'text-zinc-500'}`}>
+        <div
+          className="p-3 bg-slate-950 text-white border-4 border-slate-900 rounded-2xl mb-6 grid grid-cols-[1fr_auto_1fr] items-center gap-2"
+          style={{ boxShadow: '4px 4px 0px #0f172a' }}
+        >
+          <div className="text-center min-w-0">
+            <div className="text-[11px] font-black uppercase text-blue-300 truncate">{p1Name}</div>
+            <div className={`font-brand text-4xl ${score.winner === 'south' ? 'text-amber-400' : 'text-slate-500'}`}>
               {score.games[0]}
             </div>
           </div>
-          <div className="text-zinc-600 font-bold text-sm uppercase">Games</div>
-          <div className="text-center">
-            <div className="text-xs font-semibold text-zinc-400 mb-1">{p2Name}</div>
-            <div className={`text-3xl font-black font-mono ${!isP1Winner ? 'text-blue-400' : 'text-zinc-500'}`}>
+          <div className="text-slate-500 font-black text-xs uppercase">Games</div>
+          <div className="text-center min-w-0">
+            <div className="text-[11px] font-black uppercase text-rose-300 truncate">{p2Name}</div>
+            <div className={`font-brand text-4xl ${score.winner === 'north' ? 'text-amber-400' : 'text-slate-500'}`}>
               {score.games[1]}
             </div>
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex flex-col gap-2.5">
-          <button
-            onClick={onRematch}
-            className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-zinc-950 font-black rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-amber-500/30 transition transform active:scale-98"
-          >
-            <RotateCcw className="w-5 h-5" />
-            Play Rematch
-          </button>
+          {canRematch ? (
+            <button
+              autoFocus
+              onClick={() => click(onRematch)}
+              className="w-full py-3.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-brand text-xl uppercase tracking-wider rounded-2xl border-4 border-slate-900 flex items-center justify-center gap-2 transition active:translate-y-0.5"
+              style={{ boxShadow: '4px 4px 0px #0f172a' }}
+            >
+              <RotateCcw className="w-5 h-5 stroke-[3]" />
+              {isOnline ? 'Rematch (everyone)' : 'Play Again'}
+            </button>
+          ) : (
+            <div className="w-full py-3 bg-slate-100 border-4 border-dashed border-slate-400 rounded-2xl font-black text-sm uppercase tracking-wide text-slate-600">
+              Waiting for the host to start a rematch…
+            </div>
+          )}
+
+          {onBackToLobby && (
+            <button
+              onClick={() => click(onBackToLobby)}
+              className="w-full py-3 bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-brand text-lg uppercase tracking-wider rounded-2xl border-4 border-slate-900 flex items-center justify-center gap-2 transition"
+              style={{ boxShadow: '4px 4px 0px #0f172a' }}
+            >
+              <Users className="w-5 h-5 stroke-[2.5]" />
+              Back to Lobby
+            </button>
+          )}
 
           <button
-            onClick={onOpenCustomizer}
-            className="w-full py-3 bg-zinc-800 hover:bg-zinc-700/80 text-white font-semibold rounded-xl border border-zinc-700 flex items-center justify-center gap-2 transition"
+            onClick={() => click(onExitToMenu)}
+            className="w-full py-3 bg-white hover:bg-slate-100 text-slate-950 font-brand text-lg uppercase tracking-wider rounded-2xl border-4 border-slate-900 flex items-center justify-center gap-2 transition"
+            style={{ boxShadow: '4px 4px 0px #0f172a' }}
           >
-            <Palette className="w-4 h-4 text-amber-400" />
-            Customize Outfit & Racket
+            <Home className="w-5 h-5 stroke-[2.5]" />
+            {isOnline ? 'Leave Room' : 'Main Menu'}
           </button>
         </div>
       </div>

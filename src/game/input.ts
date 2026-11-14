@@ -75,23 +75,34 @@ export class InputManager {
   }
 
   public setPlayerSide(side: Side) {
+    if (side === this.playerSide) return;
     this.playerSide = side;
-    if (side === 'north' && this.currentAim.z < 0) this.currentAim.z *= -1;
-    if (side === 'south' && this.currentAim.z > 0) this.currentAim.z *= -1;
+    this.currentAim.z *= -1;
+    this.currentAim.x *= -1;
   }
 
-  public getMovementInput(): { x: number; z: number; sprint: boolean } {
-    if (!this.isEnabled) {
-      return { x: 0, z: 0, sprint: false };
-    }
+  /** Screen-relative stick: x = right, z = down/back (towards the camera). */
+  private getRawStick(): { x: number; z: number } {
     let x = this.virtualStick.x;
     let z = this.virtualStick.z;
-
     if (this.keys['d'] || this.keys['arrowright']) x += 1;
     if (this.keys['a'] || this.keys['arrowleft']) x -= 1;
     if (this.keys['s'] || this.keys['arrowdown']) z += 1;
     if (this.keys['w'] || this.keys['arrowup']) z -= 1;
-    if (this.playerSide === 'north') z *= -1;
+    return { x, z };
+  }
+
+  /** World-space movement for the local player (camera sits behind the player's baseline). */
+  public getMovementInput(): { x: number; z: number; sprint: boolean } {
+    if (!this.isEnabled) {
+      return { x: 0, z: 0, sprint: false };
+    }
+    let { x, z } = this.getRawStick();
+    if (this.playerSide === 'north') {
+      // Camera looks down +Z from behind the north baseline, so both axes are mirrored.
+      x *= -1;
+      z *= -1;
+    }
 
     // Normalize diagonal movement
     const len = Math.hypot(x, z);
@@ -110,7 +121,7 @@ export class InputManager {
    * Depth: Short (S / Down / Stick back) | Deep (W / Up / none -> Default Deep)
    */
   public getTargetZone(): AimTargetZone {
-    const move = this.getMovementInput();
+    const move = this.isEnabled ? this.getRawStick() : { x: 0, z: 0 };
     let col: 'left' | 'center' | 'right' = 'center';
     let row: 'short' | 'deep' = 'deep'; // Default is center-deep
 
@@ -162,7 +173,8 @@ export class InputManager {
 
     // Smooth snappy interpolation between court zones
     const lerpRate = Math.min(1.0, dt * 14.0);
-    this.currentAim.x += (targetPos.x - this.currentAim.x) * lerpRate;
+    const sideTargetX = this.playerSide === 'south' ? targetPos.x : -targetPos.x;
+    this.currentAim.x += (sideTargetX - this.currentAim.x) * lerpRate;
     const sideTargetZ = this.playerSide === 'south' ? targetPos.z : -targetPos.z;
     this.currentAim.z += (sideTargetZ - this.currentAim.z) * lerpRate;
     this.currentAim.y = 0;
@@ -177,10 +189,11 @@ export class InputManager {
    * - Jump / overhead: Smash
    */
   public determineShotType(isOverheadOrJumping: boolean, isBajadaEligible: boolean): ShotType {
-    if (this.keys['control'] || this.keys['ctrl']) {
+    // Q = lob, F = drop shot. (Shift is sprint and Ctrl+W would close the tab, so neither is used.)
+    if (this.keys['f']) {
       return 'drop';
     }
-    if (this.keys['shift']) {
+    if (this.keys['q']) {
       return 'lob';
     }
     if (isBajadaEligible) {
@@ -235,8 +248,14 @@ export class InputManager {
 
   // Mouse click handling: Left click charges / hits, right click instant smash
   // Mouse position does NOT aim the ball
+  private isGameSurface(target: EventTarget | null): boolean {
+    const mount = this.config.mountElement;
+    if (!mount || !(target instanceof Node)) return true;
+    return mount.contains(target);
+  }
+
   private handleMouseDown = (e: MouseEvent) => {
-    if (!this.isEnabled) return;
+    if (!this.isEnabled || !this.isGameSurface(e.target)) return;
     if (e.button === 0) {
       this.isCharging = true;
       this.chargeStartTime = performance.now();
@@ -266,6 +285,13 @@ export class InputManager {
     }
 
     if (!this.isEnabled) return;
+    const targetEl = e.target as HTMLElement | null;
+    if (targetEl && (targetEl.tagName === 'INPUT' || targetEl.tagName === 'TEXTAREA' || targetEl.isContentEditable)) {
+      return;
+    }
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      e.preventDefault();
+    }
 
     const key = e.key.toLowerCase();
     this.keys[key] = true;
@@ -312,7 +338,18 @@ export class InputManager {
   };
 
   private handleContextMenu = (e: MouseEvent) => {
-    e.preventDefault();
+    if (this.isGameSurface(e.target)) e.preventDefault();
+  };
+
+  /** Release everything when the window loses focus so keys never get "stuck". */
+  private handleBlur = () => {
+    this.keys = {};
+    if (this.isCharging) {
+      this.isCharging = false;
+      this.currentChargePower = 0.65;
+      this.config.onChargeChange(0.65);
+    }
+    this.virtualStick = { x: 0, z: 0 };
   };
 
   private attach() {
@@ -322,6 +359,7 @@ export class InputManager {
       window.addEventListener('contextmenu', this.handleContextMenu);
       window.addEventListener('keydown', this.handleKeyDown);
       window.addEventListener('keyup', this.handleKeyUp);
+      window.addEventListener('blur', this.handleBlur);
     }
   }
 
@@ -332,6 +370,7 @@ export class InputManager {
       window.removeEventListener('contextmenu', this.handleContextMenu);
       window.removeEventListener('keydown', this.handleKeyDown);
       window.removeEventListener('keyup', this.handleKeyUp);
+      window.removeEventListener('blur', this.handleBlur);
     }
   }
 }

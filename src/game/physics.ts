@@ -18,6 +18,26 @@ export const MAX_BALL_SPEED = 35.0; // Hard cap ~35 m/s
 export const AIR_DRAG_COEFF = 0.0055; // Quadratic drag coefficient
 export const MAGNUS_COEFF = 0.0028; // Magnus effect coefficient for topspin/slice
 
+function hasBouncedOnReceiverSide(b: BallState): boolean {
+  if (!b.lastHitter) return false;
+  const receiver: Side = b.lastHitter === 'south' ? 'north' : 'south';
+  return (b.bouncesOnSide[receiver] || 0) > 0;
+}
+
+/**
+ * Padel shot legality for a player of `side` trying to strike the ball at `ballPos`:
+ * - the ball must be live,
+ * - your team may not hit it twice in a row,
+ * - a serve must bounce before it can be returned,
+ * - you cannot reach over the net into the opponent's half.
+ */
+export function canPlayerStrikeBall(ball: BallState, side: Side, ballPos: Vector3D = ball.position): boolean {
+  if (!ball.inPlay) return false;
+  if (ball.lastHitter === side) return false;
+  if (ball.isServe && ball.bounceCount === 0) return false;
+  return side === 'south' ? ballPos.z > -0.3 : ballPos.z < 0.3;
+}
+
 /**
  * Factory for initial ball state
  */
@@ -42,6 +62,7 @@ export function createInitialBall(servingSide: Side = 'south', serverPos?: Vecto
     isServe: false,
     serveBoxTarget: null,
     inPlay: false,
+    crossedNet: false,
     trail: [],
   };
 }
@@ -134,6 +155,10 @@ export function stepBallPhysics(
         b.bouncesOnSide.north = 0;
       } else {
         b.bouncesOnSide.south = 0;
+      }
+      const enteringSide: Side = p1.z <= 0 ? 'north' : 'south';
+      if (b.lastHitter && enteringSide !== b.lastHitter) {
+        b.crossedNet = true;
       }
 
       const denom = p1.z - p0.z;
@@ -238,11 +263,28 @@ export function stepBallPhysics(
           }
         }
 
+        // OWN-SIDE BOUNCE RULE (rallies only):
+        // - Ball that never reached the opponent lands on the hitter's side -> fault by hitter.
+        // - Ball that bounced on the opponent's side and came back over the net -> winner.
+        if (!b.isServe && b.lastHitter && bounceSide === b.lastHitter && !events.pointFault) {
+          const opponentSide: Side = b.lastHitter === 'south' ? 'north' : 'south';
+          events.pointFault = true;
+          if ((b.bouncesOnSide[opponentSide] || 0) > 0 || b.crossedNet) {
+            events.faultWinner = b.lastHitter;
+            events.faultReason = 'Ball rebounded back over the net - unreturnable!';
+            events.shortReason = 'Winner';
+          } else {
+            events.faultWinner = opponentSide;
+            events.faultReason = 'Ball did not clear the net!';
+            events.shortReason = 'Net';
+          }
+        }
+
         // DOUBLE BOUNCE RULE:
         // In padel, ball may bounce only once on a side before being returned!
         // If it bounces a 2nd time on a side without being hit by that side,
         // that side fails to return -> the OTHER team gets the point!
-        if (b.bouncesOnSide[bounceSide] >= 2) {
+        if (b.bouncesOnSide[bounceSide] >= 2 && !events.faultWinner) {
           events.pointFault = true;
           events.faultWinner = bounceSide === 'south' ? 'north' : 'south';
           events.faultReason = `Double bounce on ${bounceSide === 'south' ? 'South' : 'North'} side!`;
@@ -251,10 +293,17 @@ export function stepBallPhysics(
       } else {
         events.outOfBounds = true;
         events.pointFault = true;
-        // Ball landed out of court -> fault against last hitter
-        events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
-        events.faultReason = 'Ball bounced out of court!';
-        events.shortReason = 'Out';
+        if (hasBouncedOnReceiverSide(b) && !b.isServe) {
+          // Ball already bounced legally on the opponent's side: they failed to return it.
+          events.faultWinner = b.lastHitter ?? 'south';
+          events.faultReason = 'Ball escaped the court after a winning bounce!';
+          events.shortReason = 'Winner';
+        } else {
+          // Ball landed out of court -> fault against last hitter
+          events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
+          events.faultReason = 'Ball bounced out of court!';
+          events.shortReason = 'Out';
+        }
       }
     } else {
       b.position.y = p1.y;
@@ -264,9 +313,15 @@ export function stepBallPhysics(
     if (Math.abs(p1.x) > halfW + 0.5 || Math.abs(p1.z) > halfL + 0.5) {
       events.outOfBounds = true;
       events.pointFault = true;
-      events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
-      events.faultReason = 'Ball hit out of court!';
-      events.shortReason = 'Out';
+      if (hasBouncedOnReceiverSide(b) && !b.isServe) {
+        events.faultWinner = b.lastHitter ?? 'south';
+        events.faultReason = 'Ball flew out of the court after a winning bounce!';
+        events.shortReason = 'Winner';
+      } else {
+        events.faultWinner = b.lastHitter === 'south' ? 'north' : 'south';
+        events.faultReason = 'Ball hit out of court!';
+        events.shortReason = 'Out';
+      }
       b.position.x = p1.x;
       b.position.z = p1.z;
     } else {
@@ -690,6 +745,7 @@ export function strikeBallWithRacket(
     wallHitCount: 0,
     lastWallType: null,
     isServe: false,
+    crossedNet: false,
     lastShotType: shotType,
     inPlay: true,
   };
